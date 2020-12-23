@@ -522,7 +522,7 @@ groupVersion(group: "core", version: "v1") {
 
         /// Status represents the current information/status for the persistent volume. Populated by the system. Read-only. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistent-volumes
         status: optional Status,
-        
+
         /// PersistentVolumeSpec is the specification of a persistent volume.
         struct Spec {
 
@@ -1715,7 +1715,7 @@ groupVersion(group: "core", version: "v1") {
 
             /// TerminationMessagePolicy describes how termination messages are retrieved from a container.
             enum TerminationMessagePolicy {
-                File, FallbackToLogsOnError 
+                File, FallbackToLogsOnError
             }
 
             /// The pod this Toleration is attached to tolerates any taint that matches the triple <key,value,effect> using the matching operator <operator>.
@@ -1738,7 +1738,7 @@ groupVersion(group: "core", version: "v1") {
 
                 /// A toleration operator is the set of operators that can be used in a toleration.
                 enum Operator {
-                    Exists, Eqal 
+                    Exists, Equal
                 }
             }
 
@@ -1757,7 +1757,7 @@ groupVersion(group: "core", version: "v1") {
                 /// LabelSelector is used to find matching pods. Pods that match this label selector are counted to determine the number of pods in their corresponding topology domain.
                 labelSelector: optional meta.k8s.io/v1::LabelSelector,
                 enum UnsatisfiableConstraintAction {
-                    DoNotSchedule, ScheduleAnyway 
+                    DoNotSchedule, ScheduleAnyway
                 }
             }
 
@@ -1996,11 +1996,7 @@ groupVersion(group: "core", version: "v1") {
                         sizeLimit: optional quantity,
 
                         /// StorageMedium defines ways that storage can be allocated to a volume.
-                        enum StorageMedium {
-                            Memory, HugePages, 
-                            // TODO: this isn't a enum per-se because we accept arbitrary numbers
-                            // after HugePages-
-                        }
+                        newtype StorageMedium: string, // NOTE: this is validated by the controller today, not by the API server, but it'd be `validates(pattern: "Memory|(HugePages(-.+)?)")`
                     }
 
                     /// Represents an ephemeral volume that is handled by a normal storage driver.
@@ -2351,7 +2347,7 @@ groupVersion(group: "core", version: "v1") {
 
                 /// MountPropagationMode describes mount propagation.
                 enum MountPropagationMode {
-                    None, HostToContainer, Bidirectional 
+                    None, HostToContainer, Bidirectional
                 }
             }
 
@@ -2683,12 +2679,12 @@ groupVersion(group: "core", version: "v1") {
 
             /// PodPhase is a label for the condition of a pod at the current time.
             enum PodPhase {
-               Pending, Running, Succeeded, Failed, Unknown 
+               Pending, Running, Succeeded, Failed, Unknown
             }
 
             /// PodQOSClass defines the supported qos classes of Pods.
             enum PodQOSClass {
-               Guaranteed, Burstable, BestEffort 
+               Guaranteed, Burstable, BestEffort
             }
         }
     }
@@ -2710,8 +2706,7 @@ groupVersion(group: "core", version: "v1") {
         struct Spec {
 
             /// Standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
-            // TODO: fake inline
-            @go::name(name: "")
+            @go::inline
             metadata: optional meta.k8s.io/v1::ObjectMeta,
 
             /// Specification of the desired behavior of the pod. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
@@ -2931,7 +2926,7 @@ groupVersion(group: "core", version: "v1") {
             /// externalTrafficPolicy denotes if this Service desires to route external traffic to node-local or cluster-wide endpoints. "Local" preserves the client source IP and avoids a second hop for LoadBalancer and Nodeport type services, but risks potentially imbalanced traffic spreading. "Cluster" obscures the client source IP and may cause a second hop to another node, but should have good overall load-spreading.
             externalTrafficPolicy: optional ExternalTrafficPolicyType,
             enum ExternalTrafficPolicyType {
-               Local, Cluster 
+               Local, Cluster
             }
 
             /// healthCheckNodePort specifies the healthcheck nodePort for the service. This only applies when type is set to LoadBalancer and externalTrafficPolicy is set to Local. If a value is specified, is in-range, and is not in use, it will be used.  If not specified, a value will be automatically allocated.  External systems (e.g. load-balancers) can use this port to determine if a given node holds endpoints for this service or not.  If this field is specified when creating a Service which does not need it, creation will fail. This field will be wiped when updating a Service to no longer need it (e.g. changing type).
@@ -2960,12 +2955,12 @@ groupVersion(group: "core", version: "v1") {
 
             /// IPFamily represents the IP Family (IPv4 or IPv6). This type is used to express the family of an IP expressed by a type (e.g. service.spec.ipFamilies).
             enum IPFamily {
-               IPv4, IPv6 
+               IPv4, IPv6
             }
 
             /// IPFamilyPolicyType represents the dual-stack-ness requested or required by a Service
             enum IPFamilyPolicyType {
-                SingleStack, PreferDualStack, RequireDualStack 
+                SingleStack, PreferDualStack, RequireDualStack
             }
 
             /// ServicePort contains information on service's port.
@@ -3006,7 +3001,7 @@ groupVersion(group: "core", version: "v1") {
 
             /// Service Type string describes ingress methods for a service
             enum Type {
-               ClusterIP, NodePort, LoadBalancer, None 
+               ClusterIP, NodePort, LoadBalancer, None
             }
         }
 
@@ -3108,7 +3103,7 @@ groupVersion(group: "core", version: "v1") {
 
     /// Protocol defines network protocols supported for things like container ports.
     enum Protocol {
-        TCP, UDP, SCTP        
+        TCP, UDP, SCTP
     }
 
     /// ResourceList is a set of (resource name, quantity) pairs.
@@ -3129,7 +3124,7 @@ groupVersion(group: "core", version: "v1") {
 
 
     enum TaintEffect {
-        NoSchedule, PreferNoSchedule, NoExecute 
+        NoSchedule, PreferNoSchedule, NoExecute
     }
 
     /// Binding ties one object to another; for example, a pod is bound to a node by a scheduler. Deprecated in 1.7, please use the bindings subresource of pods instead.
@@ -3337,7 +3332,7 @@ groupVersion(group: "core", version: "v1") {
 }
 
 // Author's Note: the following were not auto-imported, because they're never referenced in a kind here:
-// 
+//
 // - TopologySelector*
 // - AvoidPods, PreferPods, Entry, PodSignature
 // - NodeResources
