@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+// ISSUE: no idea what's in this file
+import "kubernetes-1.19.proto" // could be multiple files too
+
+// ISSUE: this is always needed, so it's basically boilerplate
+import "kubernetes-1.19/idl.proto"
+
+// ISSUE: it's tempting to let people try and import existing proto files,
+// but then we have to support things that aren't valid k8s constructs,
+// or tell them they can't and deal with the repeated feature requests
+// to the contrary (this already happens).
+
+// ISSUE: is the group-version inferred?  Do we manually
+// specify it via an option?  How do we know that this is a group-version's proto file?
+package batch.tutorial.kubebuilder.io.v1;
+
+message CronJob {
+    // ISSUE: this is not actually sufficient to be used as proto IDL for
+    // generating proto serialization, etc, which seems a bit confusing.  The
+    // alternative is to make people manually specify objectmeta on every
+    // object, like our current setup, but even then, this ties us into issues
+    // of "do we want proto wire format to be tied to the idl?".
+    option (k8s.idl.kind) = true;
+
+    // ISSUE: proto tag 1 must either be magically reserved for object meta,
+    // we have to have people manually type objectmeta (not great), or we have
+    // to increment or ingore these field numbers when converting to proto
+    // (confusing).
+
+    Spec spec = 2; 
+    Status status = 3;
+
+    message Spec {
+        // ALTERNATIVELY: string schedule = 1 [(google.api.field_behavior) = REQUIRED, (k8s.idl.validation.min_length) = 0];
+        // The schedule in Cron format, see https://en.wikipedia.org/wiki/Cron.
+        string schedule = 1 [(k8s.idl.validation.min_length) = 0];
+
+
+        // Optional deadline in seconds for starting the job if it misses scheduled
+        // time for any reason.  Missed jobs executions will be counted as failed ones.
+
+        // ISSUE: this syntax is accepted, but not documented in the proto docs anywhere, AFAICT.
+        optional int64 startingDeadlineSeconds = 2 [(k8s.idl.validation.minimum = 0)];
+
+        // Specifies how to treat concurrent executions of a Job.
+
+        // ISSUE: AFAICT, there's no clear way to specify "any" for options, so
+        // we have to manually escape JSON here.  Also, the options
+        // documentation is out of date? and doesn't show message syntax
+        // (accepted, but not documented anywhere), or talk about how repeated
+        // fields in options work (they don't?)
+        optional ConcurrencyPolicy concurrencyPolicy = 3 [(k8s.io.default = "\"Allow\"")];
+        enum ConcurrentyPolicy {
+            // NOTE: unclear if the proto compiler will complain for the non-uppercase enum variants
+            // AllowConcurrent allows CronJobs to run concurrently.
+            Allow = 0;
+            // ForbidConcurrent forbids concurrent runs, skipping next run if previous
+            // hasn't finished yet.
+            Forbid = 1;
+            // ReplaceConcurrent cancels currently running job and replaces it with a new one.
+            Replace = 2;
+        }
+        
+        // This flag tells the controller to suspend subsequent executions, it does
+        // not apply to already started executions.  Defaults to false.
+        optional bool suspend = 4 [(k8s.io.default = "false")];
+
+        // Specifies the job that will be created when executing a CronJob.
+
+        // ISSUE: this is completely backwards from how it's done in kubectl
+        // (kubectl is resource.version.group), but looks very similar.
+        batch.v1.JobTemplateSpec jobTemplate = 5;
+
+        // The number of successful finished jobs to retain.
+        optional int32 succesfulJobsHistoryLimit = 6 [(k8s.io.validation.minimum) = 0, (k8s.io.default = "3")];
+
+        // The number of failed finished jobs to retain.
+        optional int32 failedJobsHistoryLimit = 7 [(k8s.io.validation.minimum) = 0, (k8s.io.default = "1")];
+
+    }
+
+    message Status {
+        // A list of pointers to currently running jobs.
+        repeated core.v1.ObjectReference active = 1;
+
+        // Information when was the last time the job was successfully scheduled.
+        optional meta.k8s.io.v1.Time lastScheduleTime = 2;
+    }
+}

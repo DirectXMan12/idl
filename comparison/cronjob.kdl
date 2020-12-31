@@ -1,0 +1,60 @@
+// NOTE: notice that we explicitly specify which groups we're importing
+// which makes it easier to see what comes from where.
+
+import types (
+    {meta.k8s.io/v1, core/v1, batch/v1} from "kubernetes-1.19.cdkl";
+)
+
+group-version(group: "batch.tutorial.kubebuilder.io", version: "v1") {
+    kind CronJob {
+        spec: Spec,
+        status: Status,
+
+        // NOTE: notice that field names are first, which makes it easy
+        // to find the field you're looking for visually.
+
+        struct Spec {
+            /// The schedule in Cron format
+            /// # See Also
+            /// https://en.wikipedia.org/wiki/Cron.
+            schedule: string validated(min-length: 0),
+
+            /// deadline in seconds for starting the job if it misses scheduled
+            /// time for any reason.  Missed jobs executions will be counted as failed ones.
+            startingDeadlineSeconds: optional int64 validated(minimum: 0),
+
+            concurrencyPolicy: optional(default: Allow) ConcurrencyPolicy,
+            enum ConcurrencyPolicy {
+                /// allows CronJobs to run concurrently.
+                Allow,
+                /// forbids concurrent runs, skipping next run if previous
+                /// hasn't finished yet.
+                Forbid,
+                /// cancels currently running job and replaces it with a new one.
+                Replace,
+            }
+
+            /// tells the controller to suspend subsequent executions, it does
+            /// not apply to already started executions.
+            suspend: optional(default: false) bool,
+
+            /// Specifies the job that will be created when executing a CronJob.
+            jobTemplate: batch/v1::Job::Spec,
+
+            /// The number of successful finished jobs to retain.
+            succesfulJobsHistoryLimit: optional(default: 3) int32 validated(minimum: 0),
+
+            /// The number of failed finished jobs to retain.
+            failedJobsHistoryLimit: optional(default: 1) int32 validated(minimum: 0),
+
+        }
+        
+        struct Status {
+            /// A list of pointers to currently running jobs.
+            active: list(value: core/v1::ObjectReference),
+
+            /// Information when was the last time the job was successfully scheduled.
+            lastScheduleTime: optional time;
+        }
+    }
+}
