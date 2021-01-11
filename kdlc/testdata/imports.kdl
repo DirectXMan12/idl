@@ -1,0 +1,31 @@
+import (
+    types (
+       {core/v1} from "k8s.io/api/core/v1";
+    )
+    markers (
+        kgo from "k8s.io/code-generator/go";
+    )
+)
+
+group-version(group: "examples", version: "v1") {
+
+kind CSIDriver {
+    spec: Spec,
+
+    struct Spec {
+        // ...
+
+        // in a set, each item may appear only once.
+        volumeLifecycleModes: optional set(value: VolumeLifecycleMode),
+    }
+}
+
+kind StorageClass {
+    // ...
+
+    // types from other group-versions may be referenced with
+    // `group/version::path`.
+    reclaimPolicy: optional(default: Delete) core/v1::PersistentVolumeSpec::ReclaimPolicy,
+}
+
+}
