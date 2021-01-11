@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package kb.ir.constraints;
+option go_package = "k8s.io/idl/ckdl-ir/goir/constraints";
+
+message Numeric {
+    int64 maximum = 1;
+    int64 minimum = 2;
+
+    bool exclusive_maximum = 3;
+    bool exclusive_minimum = 4;
+
+    int64 multiple_of = 5;
+
+    // TODO: have an explict non-negative vs type-level uint vs int vs just detect minimum = 0
+}
+
+message String {
+    uint64 max_length = 1;
+    uint64 min_length = 2;
+    string pattern = 3;
+}
+
+message List {
+    uint64 max_items = 1;
+    uint64 min_items = 2;
+    bool unique_items = 3; // TODO: conceptually represent this as a set at the type-level?
+}
+
+message Object {
+    uint64 min_properties = 1;
+    uint64 max_properties = 2;
+}
+
+message General {
+    string format = 5;
+}
+
+message Any {
+    oneof type {
+        Numeric num = 1;
+        String str = 2;
+        List list = 3;
+        Object obj = 4;
+    }
+
+    General general = 5;
+}

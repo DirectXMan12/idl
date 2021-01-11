@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+import "types.proto";
+import "groupver.proto";
+
+package kb.ir;
+option go_package = "k8s.io/idl/ckdl-ir/goir";
+
+message GroupVersion {
+    groupver.GroupVersion description = 1;
+    repeated types.Kind kinds = 2;
+    repeated types.Subtype types = 3;
+}
+
+message GroupVersionSet {
+    repeated GroupVersion group_versions = 1;
+}

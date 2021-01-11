@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+import "google/protobuf/any.proto";
+import "types.proto";
+
+package kb.ir.groupver;
+option go_package = "k8s.io/idl/ckdl-ir/goir/groupver";
+
+message GroupVersion {
+    string group = 1;
+    string version = 2;
+
+    types.Documentation docs = 3;
+
+    // extra info carried for backend-specific data (e.g. lang-specific extensions, etc)
+    repeated google.protobuf.Any attributes = 2047;  
+
+}

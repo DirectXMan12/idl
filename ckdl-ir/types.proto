@@ -1,0 +1,200 @@
+syntax = "proto3";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "constraints.proto";
+
+package kb.ir.types;
+option go_package = "k8s.io/idl/ckdl-ir/goir/types";
+
+message Documentation {
+    string description = 1;
+    string example = 2; // TODO: actually bother serializing as JSON?
+    string external_ref = 3;
+}
+
+message GroupVersionRef {
+    string group = 1;
+    string version = 2;
+}
+
+message Kind {
+    string name = 1;
+    bool object = 3; // does this contain objectmeta for persistence?
+
+    repeated Field fields = 10;
+    
+    Documentation docs = 15;
+
+    repeated google.protobuf.Any attributes = 2047;  
+}
+
+message Struct {
+    // TODO: embedded
+    repeated Field fields = 1;
+
+    bool preserve_unknown_fields = 3;
+    bool is_embedded_object = 4;
+
+    constraints.Object constraints = 5;
+}
+
+message Field {
+    string name = 1;
+    bool optional = 2;
+    bool zero_means_absent = 3; // is the zero-value valid, or does it mean absent?
+    bool embedded = 4; // is embedded in the serialized object -- doesn't have a discrete field name
+    // TODO: how does this relate to nullable
+
+    oneof type {
+        Primitive primitive = 5;
+        Reference named_type = 6;
+        Set set = 7;
+        List list = 8;
+        PrimitiveMap primitive_map = 9;
+        ListMap list_map = 10;
+    }
+
+    google.protobuf.Value default = 14;
+
+    Documentation docs = 15;
+
+    uint32 proto_tag = 16;
+
+    // TODO: attributes elsewhere
+    // extra info carried for backend-specific data (e.g. lang-specific extensions, etc)
+    repeated google.protobuf.Any attributes = 2047;  
+
+    // TODO: default
+}
+
+// TODO: declaration attributes
+
+message Union {
+    bool untagged = 1;
+    string tag = 2;
+
+    repeated Field variants = 3;
+
+    constraints.General general_constraints = 10;
+    constraints.Object object_constraints = 11;
+}
+
+message Reference {
+    string name = 1;
+    GroupVersionRef group_version = 2;
+
+    constraints.Any constraints = 10;
+}
+
+// Primitives are types expected to be provided by a support library/language
+message Primitive {
+    enum Type {
+        STRING = 0;
+
+        // TODO: unify these two and rely on validation/constraints to hint?
+        // TODO: if we don't unify, we need to also have unsigned variants
+        LEGACYINT32 = 1;
+        INT64 = 2;
+
+        BOOL = 3;
+
+        TIME = 4;
+        DURATION = 5;
+        QUANTITY = 6;
+        BYTES = 7;
+
+        LEGACYFLOAT64 = 8;
+    }
+
+    Type type = 1;
+
+    constraints.General general_constraints = 10;
+    oneof specific_constraints {
+        constraints.String string_constraints = 11;
+        constraints.Numeric numeric_constraints = 12;
+    }
+}
+
+// TODO: primitive-or-reference type
+
+message List {
+    oneof items {
+        Primitive primitive = 1;
+        Reference reference = 2;
+    }
+
+    constraints.General general_constraints = 3;
+    constraints.List list_constraints = 4;
+}
+
+message Set {
+    oneof items {
+        Primitive primitive = 1;
+        Reference reference = 2; // must be a reference to a primitive
+    }
+
+    constraints.General general_constraints = 10;
+    constraints.List list_constraints = 11;
+}
+
+message PrimitiveMap {
+    oneof key {
+        Primitive primitive_key = 1;
+        Reference reference_key = 2;
+    }
+
+    oneof value {
+        Primitive primitive_value = 3;
+        Reference reference_value = 4;
+        List simple_list_value = 5; // must be primitive or primitive reference
+        // TODO: specific types for primitivereference and simplearray to make type interpretation easier?
+    }
+
+    constraints.General general_constraints = 10;
+    constraints.Object object_constraints = 11;
+}
+
+// TODO: atomic (probably an extension)
+
+message ListMap {
+    repeated string key_field = 1;
+    Reference items = 2;
+
+    constraints.General general_constraints = 10;
+    constraints.List list_constraints = 11;
+}
+
+message Subtype {
+    string name = 1;
+
+    oneof type {
+        Reference reference_alias = 3;
+        Primitive primitive_alias = 4;
+        Union union = 5;
+        Struct struct = 6;
+        Set set = 7;
+        List list = 8;
+        PrimitiveMap primitive_map = 9;
+        ListMap list_map = 10;
+        Enum enum = 11;
+    }
+
+    Documentation docs = 15;
+
+    repeated google.protobuf.Any attributes = 2047;  
+}
+
+message Enum {
+    message Variant {
+        string name = 1;
+
+        Documentation docs = 15;
+        repeated google.protobuf.Any attributes = 2047;
+    }
+
+    repeated Variant variants = 1;
+    // TODO: constraints?
+}
+
+// TODO: enums in constraints
