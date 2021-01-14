@@ -25,7 +25,20 @@ There may be bugs -- you've been warned ;-).
 
 ## A note on naming
 
-There's also another project named KDL (https://kdl.dev) that happened
-just around when I started working on this. It's pretty neat.  I'll
-probably rename this soon to avoid confusion -- just haven't had time to
-rename everything yet :-).
+There's also another project named KDL that happened just around when
+I started working on this. It's pretty neat.  I'll probably rename this
+soon to avoid confusion -- just haven't had time to rename everything yet
+:-).
+
+## Community, discussion, contribution, and support
+
+Learn how to engage with the Kubernetes community on the [community page](http://kubernetes.io/community/).
+
+You can reach the maintainers of this project at:
+
+- [Slack](http://slack.k8s.io/)
+- [Mailing List](https://groups.google.com/forum/#!forum/kubernetes-dev)
+
+### Code of conduct
+
+Participation in the Kubernetes community is governed by the [Kubernetes Code of Conduct](code-of-conduct.md).
