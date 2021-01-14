@@ -5,9 +5,9 @@ import (
 	"context"
 	"io"
 	"strings"
+	"os"
 
 	"k8s.io/idl/kdlc/lexer"
-	"k8s.io/idl/kdlc/parser/ast"
 )
 
 type ctxKey int
@@ -16,9 +16,40 @@ const (
 	inputKey
 )
 
+type TokenPosition struct {
+	Start, End lexer.Position
+}
+func (p TokenPosition) IsValid() bool {
+	// an empty token would be non-sensical, so it's fine to treat
+	// "end-at-zero" as "unset end" and thus as invalid
+	return p.End.Offset != 0
+}
+func posFor(tok lexer.Token) TokenPosition {
+	return TokenPosition{
+		Start: tok.Start,
+		End: tok.End,
+	}
+}
+
 type Span struct {
-	This ast.Span
-	Complete bool
+	Start, End TokenPosition
+}
+func (s Span) SpanStart() TokenPosition {
+	return s.Start
+}
+func (s Span) SpanEnd() TokenPosition {
+	return s.End
+}
+
+func (s Span) Complete() bool {
+	// an empty token would be non-sensical, so it's fine to treat
+	// "end-at-zero" as "unset end" and thus as invalid
+	return s.End.IsValid()
+}
+
+type Spannable interface {
+	SpanStart() TokenPosition
+	SpanEnd() TokenPosition
 }
 
 type Traces struct {
@@ -48,52 +79,51 @@ func BeginSpan(ctx context.Context, tok lexer.Token) context.Context {
 	parent, _ := ctx.Value(tracesKey).(*Traces)
 	return context.WithValue(ctx, tracesKey, &Traces{
 		Parent: parent,
-		Span: &Span{This: ast.Span{Start: tok.Start}, Complete: false},
+		Span: &Span{Start: posFor(tok)},
 	})
 }
-func EndSpan(ctx context.Context, tok lexer.Token) ast.Span {
+func EndSpan(ctx context.Context, tok lexer.Token) Span {
 	current := parentSpan(ctx)
 	if current == nil {
 		panic(fmt.Sprintf("ended a non-existent span with (%s, %s) [%s]", tok.Start, tok.End, tok.TypeString()))
 	}
-	if current.Complete {
-		panic(fmt.Sprintf("ended an already-complete span (%s, %s) @ (%s, %s) [%s]", current.This.Start, current.This.End, tok.Start, tok.End, tok.TypeString()))
+	if current.Complete() {
+		panic(fmt.Sprintf("ended an already-complete span (%s, %s) @ (%s, %s) [%s]", current.Start, current.End, tok.Start, tok.End, tok.TypeString()))
 	}
 
 	if tok.End.Offset == 0 {
 		// don't mark complete, this was an error token anway
-		return current.This
+		return *current
 	}
 
-	current.This.End = tok.End
-	current.Complete = true
-	return current.This
+	current.End = posFor(tok)
+	return *current
 }
 
-func EndSpanAt(ctx context.Context, end lexer.Position) ast.Span {
+func EndSpanAt(ctx context.Context, end TokenPosition) Span {
 	current := parentSpan(ctx)
 	if current == nil {
 		panic(fmt.Sprintf("ended a non-existent span with %s", end))
 	}
-	if current.Complete {
-		panic(fmt.Sprintf("ended an already-complete span (%s, %s) @ %s", current.This.Start, current.This.End, end))
+	if current.Complete() {
+		panic(fmt.Sprintf("ended an already-complete span (%s, %s) @ %s", current.Start, current.End, end))
 	}
 
-	if end.Offset == 0 {
+	if !end.IsValid() {
 		// don't mark complete, this was an error token anway
-		return current.This
+		return *current
 	}
 
-	current.This.End = end
-	current.Complete = true
-	return current.This
+	current.End = end
+	return *current
 }
-func TokenSpan(ctx context.Context, tok lexer.Token) (context.Context, ast.Span) {
+
+func TokenSpan(ctx context.Context, tok lexer.Token) (context.Context, Span) {
 	parent, _ := ctx.Value(tracesKey).(*Traces)
-	span := ast.TokenSpan(tok)
+	span := Span{Start: posFor(tok), End: posFor(tok)}
 	return context.WithValue(ctx, tracesKey, &Traces{
 		Parent: parent,
-		Span: &Span{This: span, Complete: true},
+		Span: &span,
 	}), span
 }
 
@@ -189,11 +219,11 @@ func printChunk(out io.Writer, input string, desc string, notes []note, span *Sp
 		}
 	}
 	if span != nil {
-		if span.Complete {
-			fmt.Fprintf(out, " @ [%s, %s]\n\t%s", span.This.Start, span.This.End, Snippet(span.This, input))
+		if span.Complete() {
+			fmt.Fprintf(out, " @ [%s, %s]\n\t%s", span.Start, span.End, Snippet(*span, input))
 		} else {
 			// TODO: partial snippet
-			fmt.Fprintf(out, " @ [%s, <incomplete>]", span.This.Start)
+			fmt.Fprintf(out, " @ [%s, <incomplete>]\n\t%s", span.Start, Snippet(*span, input))
 		}
 	}
 	fmt.Fprintln(out, "")
@@ -208,19 +238,24 @@ func WithFullInput(ctx context.Context, input string) context.Context {
 	return context.WithValue(ctx, inputKey, input)
 }
 
-func Snippet(loc ast.Span, input string) string {
-	lineStart := strings.LastIndexByte(input[:loc.Start.Offset], '\n')+1
-	if loc.Start.Line == loc.End.Line {
-		lineEnd := strings.IndexByte(input[loc.End.Offset:], '\n')
+func Snippet(loc Span, input string) string {
+	if !loc.Complete() {
+		// treat this as a single-token span if we're incomplete
+		loc.End = loc.Start
+	}
+
+	lineStart := strings.LastIndexByte(input[:loc.Start.Start.Offset], '\n')+1
+	if loc.Start.Start.Line == loc.End.End.Line {
+		lineEnd := strings.IndexByte(input[loc.End.End.Offset:], '\n')
 		if lineEnd == -1 {
 			lineEnd = len(input)
 		} else {
-			lineEnd += loc.End.Offset
+			lineEnd += loc.End.End.Offset
 		}
 
-		prefix := input[lineStart:loc.Start.Offset]
-		snip := input[loc.Start.Offset:loc.End.Offset]
-		suffix := input[loc.End.Offset:lineEnd]
+		prefix := input[lineStart:loc.Start.Start.Offset]
+		snip := input[loc.Start.Start.Offset:loc.End.End.Offset]
+		suffix := input[loc.End.End.Offset:lineEnd]
 
 		// add a little output-medium-agnostic styling
 		// TODO(directxman12): in the future, we'll want to underline
@@ -229,14 +264,40 @@ func Snippet(loc ast.Span, input string) string {
 	}
 
 	// grab the first line
-	lineEnd := strings.IndexByte(input[loc.Start.Offset:loc.End.Offset], '\n')
+	lineEnd := strings.IndexByte(input[loc.Start.Start.Offset:loc.End.End.Offset], '\n')
 	if lineEnd == -1 {
 		lineEnd = len(input)
 	} else {
-		lineEnd += loc.Start.Offset
+		lineEnd += loc.Start.Start.Offset
 	}
 
-	prefix := input[lineStart:loc.Start.Offset]
-	snip := input[loc.Start.Offset:lineEnd]
+	prefix := input[lineStart:loc.Start.Start.Offset]
+	snip := input[loc.Start.Start.Offset:lineEnd]
 	return prefix+"\u300C"+snip+"...\u22EF"
 }
+
+func fromSpannable(sp Spannable) Span {
+	if actSpan, isSpan := sp.(Span); isSpan {
+		return actSpan
+	}
+	return Span{Start: sp.SpanStart(), End: sp.SpanEnd()}
+}
+
+func InSpan(ctx context.Context, sp Spannable) context.Context {
+	parent, _ := ctx.Value(tracesKey).(*Traces)
+	span := fromSpannable(sp)
+	return context.WithValue(ctx, tracesKey, &Traces{
+		Parent: parent,
+		Span: &span,
+	})
+}
+func ErrorAt(ctx context.Context, msg string) {
+	// TODO
+	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+	input, present := FullInputFrom(ctx)
+	if !present {
+		panic(msg)
+	}
+	PrintTrace(ctx, os.Stderr, input)
+}
+// TODO: In function that automatically attaches relevant info from ast nodes

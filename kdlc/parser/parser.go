@@ -16,16 +16,15 @@ import (
 
 type Parser struct {
 	lex *lexer.Lexer
-	spanStack []ast.Span
 	nextTok lexer.Token
 
-	Error func(context.Context, ast.Span)
+	Error func(context.Context, Span)
 }
 
 func New(input *lexer.Lexer) *Parser {
 	p := &Parser{
 		lex: input,
-		Error: func(ctx context.Context, loc ast.Span) {
+		Error: func(ctx context.Context, loc Span) {
 			input, ok := FullInputFrom(ctx)
 			if !ok {
 				fmt.Fprintf(os.Stderr, "Error @ [%s, %s]\n", loc.Start, loc.End)
@@ -40,9 +39,13 @@ func New(input *lexer.Lexer) *Parser {
 		ctx = Describe(ctx, "scanner")
 		ctx = Note(ctx, "expected", notes)
 		ctx = Note(ctx, "unexpected", scanner.TokenString(unexpected))
-		end := at
-		end.Offset += 1
-		p.Error(ctx, ast.Span{Start: at, End: end})
+		pos := TokenPosition{Start: at, End: at}
+		if unexpected >= 0 { // not EOF
+			rnLen := utf8.RuneLen(unexpected)
+			pos.End.Offset += rnLen
+			pos.End.Column += rnLen
+		}
+		p.Error(ctx, Span{Start: pos, End: pos})
 	}
 	p.next(context.Background())
 	return p
@@ -57,7 +60,7 @@ func (p *Parser) markErrExp(ctx context.Context, token lexer.Token, exp ...rune)
 	p.Error(ctx, ast.TokenSpan(token))
 	p.next(ctx) // always make progress
 }
-func (p *Parser) markErrAt(ctx context.Context, span ast.Span) {
+func (p *Parser) markErrAt(ctx context.Context, span Span) {
 	p.Error(ctx, span)
 }
 
@@ -230,9 +233,42 @@ func (p *Parser) parseValue(ctx context.Context) ast.Value {
 		tok := p.next(ctx)
 		return ast.BoolVal{Value: false, Span: ast.TokenSpan(tok)}
 	case '{': // struct
-		panic("TODO")
+		res := ast.StructVal{}
+		listCtx := BeginSpan(ctx, p.expect(ctx, '{'))
+
+		p.until('}', func() {
+			key, keyTok := p.parseKey(Describe(listCtx, "struct key"))
+			kvCtx := BeginSpan(listCtx, keyTok)
+
+			p.expect(kvCtx, ':')
+
+			val := p.parseValue(Describe(kvCtx, "struct value"))
+
+			res.KeyValues = append(res.KeyValues, ast.KeyValue{
+				Key: ast.IdentFrom(key, keyTok),
+				Value: val,
+				Span: EndSpanAt(kvCtx, val.SpanEnd()),
+			})
+		})
+
+		res.Span = EndSpan(listCtx, p.expect(Describe(listCtx, "list end"), ']'))
+		return res
 	case '[': // list
-		panic("TODO")
+		res := ast.ListVal{}
+		listCtx := BeginSpan(ctx, p.expect(ctx, '['))
+
+		p.until(']', func() {
+			itemCtx := Describe(listCtx, "list item")
+			val := p.parseValue(itemCtx)
+			res.Values = append(res.Values, val)
+			if p.peek().Type != ']' {
+				// trailing comma is optional
+				p.expect(listCtx, ',')
+			}
+		})
+
+		res.Span = EndSpan(listCtx, p.expect(Describe(listCtx, "list end"), ']'))
+		return res
 	case lexer.FieldPath:
 		text, tok := p.expectWithText(ctx, lexer.FieldPath)
 		return ast.FieldPathVal(ast.IdentFrom(text[1:] /* skip the dot */, tok))
@@ -242,11 +278,29 @@ func (p *Parser) parseValue(ctx context.Context) ast.Value {
 			Name: ast.IdentFrom(text, tok),
 			Span: ast.TokenSpan(tok),
 		})
-	case lexer.FieldIdentOrKey: // a primitive
+	case lexer.FieldIdentOrKey: // a primitive or compound type
 		text, tok := p.expectWithText(ctx, lexer.FieldIdentOrKey)
+		if p.peek().Type == '(' {
+			ctx = BeginSpan(ctx, tok)
+			params := p.parseAnyParamList(Describe(ctx, "modifier parameters"))
+			return ast.CompoundTypeVal(ast.KeyishModifier{
+				Name: ast.IdentFrom(text, tok),
+				Parameters: &params,
+				Span: EndSpanAt(ctx, params.SpanEnd()),
+			})
+		}
 		return ast.PrimitiveTypeVal(ast.IdentFrom(text, tok))
-	case lexer.DefinitelyKey: // a primitive
+	case lexer.DefinitelyKey: // a primitive or compound type
 		text, tok := p.expectWithText(ctx, lexer.DefinitelyKey)
+		if p.peek().Type == '(' {
+			ctx = BeginSpan(ctx, tok)
+			params := p.parseAnyParamList(Describe(ctx, "modifier parameters"))
+			return ast.CompoundTypeVal(ast.KeyishModifier{
+				Name: ast.IdentFrom(text, tok),
+				Parameters: &params,
+				Span: EndSpanAt(ctx, params.SpanEnd()),
+			})
+		}
 		return ast.PrimitiveTypeVal(ast.IdentFrom(text, tok))
 	case lexer.QualPath:
 		return ast.RefTypeVal(p.parseQualPath(ctx))
@@ -417,8 +471,31 @@ func (s StringParam) name() string {
 func (s *StringParam) present() bool {
 	return s.set
 }
+type BoolParam struct {
+	Name string
+	Value bool
+	set bool
+}
+func (s *BoolParam) parse(ctx context.Context, p *Parser) {
+	tok := p.peek()
+	switch tok.Type {
+	case lexer.KWTrue:
+		s.Value = true
+	case lexer.KWFalse:
+		s.Value = false
+	default:
+		p.markErrExp(ctx, tok, lexer.KWTrue, lexer.KWFalse)
+	}
+	s.set = true
+}
+func (s BoolParam) name() string {
+	return s.Name
+}
+func (s *BoolParam) present() bool {
+	return s.set
+}
 
-func (p *Parser) parseParamList(ctx context.Context, defs ...Param) ast.Span {
+func (p *Parser) parseParamList(ctx context.Context, defs ...Param) Span {
 	ctx = Describe(ctx, "parameter list")
 	ctx = BeginSpan(ctx, p.expect(Describe(ctx, "parameter list start"), '('))
 
@@ -453,7 +530,7 @@ func (p *Parser) parseAnyParamList(ctx context.Context) ast.ParameterList {
 		p.expect(Describe(ctx, "between keys and values"), ':')
 		val := p.parseValue(Describe(ctx, "parameter value"))
 
-		var span ast.Span
+		var span Span
 		if p.peek().Type == ')' {
 			// don't require a final comma
 			span = EndSpanAt(ctx, val.SpanEnd())
@@ -475,7 +552,7 @@ func (p *Parser) parseAnyParamList(ctx context.Context) ast.ParameterList {
 	}
 }
 
-func (p *Parser) requiredArgs(ctx context.Context, span ast.Span, args ...Param) {
+func (p *Parser) requiredArgs(ctx context.Context, span Span, args ...Param) {
 	for _, arg := range args {
 		if !arg.present() {
 			p.markErrAt(Note(ctx, "missing parameter", arg.name()), span)
@@ -494,27 +571,27 @@ func (p *Parser) maybeDocs(ctx context.Context) ast.Docs {
 	}
 	var sections []ast.DocSection
 	var lastSection ast.DocSection
-	var lastEnd lexer.Position
+	var lastEnd lexer.Token
 	for maybeDoc := p.peek(); maybeDoc.Type == lexer.Doc; maybeDoc = p.peek() {
 		raw, tok := p.expectWithText(sectionCtx, lexer.Doc)
 		raw = raw[3:] // skip the slashes
 
 		if len(raw) == 0 {
 			lastSection.Lines = append(lastSection.Lines, "")
-			lastEnd = tok.End
+			lastEnd = tok
 			continue
 		}
 
 		if raw[0] != ' ' {
 			// TODO: more precise location
 			p.markErr(Note(sectionCtx, "error", "doc comments must have a space after the slashes"), tok)
-			lastEnd = tok.End
+			lastEnd = tok
 			continue
 		}
 		raw = raw[1:]
 		if raw[0] == '#' { // section title
 			// append the last section...
-			lastSection.Span = EndSpanAt(sectionCtx, lastEnd)
+			lastSection.Span = EndSpan(sectionCtx, lastEnd)
 			sections = append(sections, lastSection)
 
 			// ...and reset
@@ -524,15 +601,15 @@ func (p *Parser) maybeDocs(ctx context.Context) ast.Docs {
 			lastSection = ast.DocSection{
 				Title: sectionName,
 			}
-			lastEnd = tok.End
+			lastEnd = tok
 			continue
 		}
 		// TODO(directxman12): catch cases of `   # foo` that are probably accidents?
 		lastSection.Lines = append(lastSection.Lines, raw)
-		lastEnd = tok.End
+		lastEnd = tok
 	}
 	if lastSection.Title != "" || len(lastSection.Lines) > 0 {
-		lastSection.Span = EndSpanAt(sectionCtx, lastEnd)
+		lastSection.Span = EndSpan(sectionCtx, lastEnd)
 		sections = append(sections, lastSection)
 	}
 
@@ -592,6 +669,9 @@ func (p *Parser) maybeMarkers(ctx context.Context) []ast.AbstractMarker {
 func (p *Parser) maybeDocsMarkers(ctx context.Context) (ast.Docs, []ast.AbstractMarker) {
 	docs := p.maybeDocs(ctx)
 	markers := p.maybeMarkers(ctx)
+	// TODO: make sure there's no whitespace or distinct comments between
+	// this and whatever's being described.
+	// End of line comments after markers are fine though
 	return docs, markers
 }
 
@@ -642,7 +722,7 @@ func (p *Parser) parseDecl(ctx context.Context) ast.Decl {
 		decl := p.parseKindDeclRest(ctx)
 		decl.Docs = docs
 		decl.Markers = markers
-		return decl
+		return &decl
 	}
 
 	// TODO: note in errors that we could be expecting a "kind" keyword too
@@ -650,7 +730,7 @@ func (p *Parser) parseDecl(ctx context.Context) ast.Decl {
 	decl := p.parseSubtypeDeclRest(ctx)
 	decl.Docs = docs
 	decl.Markers = markers
-	return decl
+	return &decl
 }
 
 func (p *Parser) parseSubtypeDeclRest(ctx context.Context) ast.SubtypeDecl {
@@ -676,6 +756,25 @@ func (p *Parser) parseSubtypeDeclRest(ctx context.Context) ast.SubtypeDecl {
 	ctx = Note(ctx, "type", typeAsStr)
 	ctx = BeginSpan(ctx, p.next(ctx))
 
+	var unionTag string
+	var unionUntagged bool
+	switch declKeyword.Type {
+	case lexer.KWUnion:
+		unionTag = "type"
+		if p.peek().Type == '(' {
+			tag := StringParam{Name: "tag"}
+			untagged := BoolParam{Name: "untagged"}
+			p.parseParamList(Describe(ctx, "union params"), &tag, &untagged)
+
+			if tag.present() {
+				unionTag = tag.Value
+			}
+			if untagged.present() {
+				unionUntagged = untagged.Value
+			}
+		}
+	}
+
 	name, nameTok := p.expectWithText(Describe(ctx, "subtype name"), lexer.TypeIdent)
 
 	ctx = Note(ctx, "name", name)
@@ -684,7 +783,7 @@ func (p *Parser) parseSubtypeDeclRest(ctx context.Context) ast.SubtypeDecl {
 	switch declKeyword.Type {
 	case lexer.KWStruct:
 		fields, subtypes, blockSpan := p.parseFieldBlock(ctx)
-		body = ast.Struct{
+		body = &ast.Struct{
 			Fields: fields,
 			Subtypes: subtypes,
 			Span: blockSpan,
@@ -693,15 +792,19 @@ func (p *Parser) parseSubtypeDeclRest(ctx context.Context) ast.SubtypeDecl {
 		// unions parse like structs for now --
 		// we sort out the differences when we resolve modifiers
 		fields, subtypes, blockSpan := p.parseFieldBlock(ctx)
-		body = ast.Union{
+		body = &ast.Union{
 			Variants: fields,
 			Subtypes: subtypes,
 			Span: blockSpan,
+			Tag: unionTag,
+			Untagged: unionUntagged,
 		}
 	case lexer.KWEnum:
-		body = p.parseEnumBlock(ctx)
+		enum := p.parseEnumBlock(ctx)
+		body = &enum
 	case lexer.KWNewType:
-		body = p.parseNewtypeRest(ctx)
+		nt := p.parseNewtypeRest(ctx)
+		body = &nt
 	}
 
 	return ast.SubtypeDecl{
@@ -783,7 +886,7 @@ func (p *Parser) parseUnqualPath(ctx context.Context) ast.RefModifier {
 	}
 }
 
-func (p *Parser) parseNewtypeRest(ctx context.Context) ast.SubtypeBody {
+func (p *Parser) parseNewtypeRest(ctx context.Context) ast.Newtype {
 	ctx = Describe(ctx, "newtype spec")
 	ctx = BeginSpan(ctx, p.expect(ctx, ':'))
 	var mods ast.ModifierList
@@ -808,14 +911,13 @@ func (p *Parser) parseKindDeclRest(ctx context.Context) ast.KindDecl {
 	span := EndSpanAt(ctx, blockSpan.End)
 	return ast.KindDecl{
 		Name: ast.IdentFrom(name, nameTok),
-		NameSpan: ast.TokenSpan(nameTok),
 		Fields: fields,
 		Subtypes: subtypes,
 		Span: span,
 	}
 }
 
-func (p *Parser) parseFieldBlock(ctx context.Context) ([]ast.Field, []ast.SubtypeDecl, ast.Span) {
+func (p *Parser) parseFieldBlock(ctx context.Context) ([]ast.Field, []ast.SubtypeDecl, Span) {
 	ctx = Describe(ctx, "field block")
 	ctx = BeginSpan(ctx, p.expect(Describe(ctx, "field block start"), '{'))
 
@@ -863,6 +965,12 @@ func (p *Parser) parseField(ctx context.Context) ast.Field {
 		p.markErrExp(Describe(ctx, "field name"), start, lexer.DefinitelyFieldIdent)
 	}
 
+	inline := false
+	if fieldName == "_inline" {
+		fieldName = ""
+		inline = true
+	}
+
 	p.expect(ctx, ':')
 	var mods ast.ModifierList
 	p.untilEither(',', '}', func() {
@@ -874,6 +982,7 @@ func (p *Parser) parseField(ctx context.Context) ast.Field {
 	return ast.Field{
 		Name: ast.IdentFrom(fieldName, fieldTok),
 		Modifiers: mods,
+		Embedded: inline,
 		Span: span,
 	}
 }

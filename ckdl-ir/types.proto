@@ -64,8 +64,6 @@ message Field {
     // TODO: attributes elsewhere
     // extra info carried for backend-specific data (e.g. lang-specific extensions, etc)
     repeated google.protobuf.Any attributes = 2047;  
-
-    // TODO: default
 }
 
 // TODO: declaration attributes
@@ -105,6 +103,7 @@ message Primitive {
         BYTES = 7;
 
         LEGACYFLOAT64 = 8;
+        INTORSTRING = 9;
     }
 
     Type type = 1;

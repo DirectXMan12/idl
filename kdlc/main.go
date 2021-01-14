@@ -3,33 +3,40 @@ package main
 import (
 	"os"
 	"fmt"
-	"io/ioutil"
-	"bytes"
 	"context"
-	"gopkg.in/yaml.v2" // just for pretty-printing
+	//"gopkg.in/yaml.v2" // just for pretty-printing
+	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
-	"k8s.io/idl/kdlc/lexer"
-	"k8s.io/idl/kdlc/parser"
-	ptrace "k8s.io/idl/kdlc/parser/trace"
+	"k8s.io/idl/kdlc/passes"
+	"k8s.io/idl/kdlc/toir"
 )
 
 func main() {
-	f, err := os.Open(os.Args[1]) // for testing
-	if err != nil {
-		panic(err)
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "usage: %s IMPORTDIRS... file.kdl")
+		os.Exit(1)
 	}
-	defer f.Close()
-	fullInput, err := ioutil.ReadAll(f)
-	if err != nil {
-		panic(err)
-	}
-	lex := lexer.New(bytes.NewBuffer(fullInput))
-	parse := parser.New(lex)
-	res := parse.Parse(ptrace.WithFullInput(context.Background(), string(fullInput)))
+	importer := passes.ImportFrom(os.Args[1:len(os.Args)-1]...)
 
-	resText, err := yaml.Marshal(res)
+	res := importer.Load(context.Background(), os.Args[len(os.Args)-1])
+
+	// TODO: full input context (maybe put into lookaside)
+	irRes := toir.File(context.Background(), &res.Main)
+
+	out, err := prototext.MarshalOptions{
+		Multiline: true,
+	}.Marshal(&irRes)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(string(resText))
+	fmt.Fprintf(os.Stderr, string(out))
+
+	out, err = proto.Marshal(&irRes)
+	if err != nil {
+		panic(err)
+	}
+	if _, err := os.Stdout.Write(out); err != nil {
+		panic(err)
+	}
 }

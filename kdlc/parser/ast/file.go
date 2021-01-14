@@ -1,20 +1,15 @@
 package ast
 
 import (
+	"context"
+
 	"k8s.io/idl/kdlc/lexer"
+	"k8s.io/idl/kdlc/parser/trace"
 )
 
-type Span struct {
-	Start, End lexer.Position
-}
-func (s Span) SpanStart() lexer.Position {
-	return s.Start
-}
-func (s Span) SpanEnd() lexer.Position {
-	return s.End
-}
-func TokenSpan(tok lexer.Token) Span {
-	return Span{Start: tok.Start, End: tok.End}
+func TokenSpan(tok lexer.Token) trace.Span {
+	at := trace.TokenPosition{Start: tok.Start, End: tok.End}
+	return trace.Span{Start: at, End: at}
 }
 
 type File struct {
@@ -33,19 +28,19 @@ type Imports struct {
 	// Markers maps marker key prefix to source files
 	Markers *MarkerImports
 
-	Span
+	trace.Span
 }
 
 type MarkerImports struct {
 	Imports map[string]MarkerImport
 
-	Span
+	trace.Span
 }
 
 type TypeImports struct {
 	Imports map[GroupVersionRef]TypeImport
 
-	Span
+	trace.Span
 }
 
 // TODO: markerimport, typeimport, and group-version need spans on their values
@@ -53,26 +48,26 @@ type MarkerImport struct {
 	Alias string
 	Src string
 
-	Span
+	trace.Span
 }
 
 type TypeImport struct {
 	GroupVersion GroupVersionRef
 	Src string
 
-	Span
+	trace.Span
 }
 
 type Docs struct {
 	Sections []DocSection
-	Span
+	trace.Span
 }
 
 type DocSection struct {
 	Title string
 	Lines []string
 
-	Span
+	trace.Span
 }
 
 type GroupVersion struct {
@@ -82,64 +77,62 @@ type GroupVersion struct {
 	Docs Docs
 	Decls []Decl
 
-	Span
+	trace.Span
 }
 
 type Value interface{
-	Spannable
+	trace.Spannable
 }
 type StringVal struct {
 	Value string
-	Span
+	trace.Span
 }
 type NumVal struct {
 	Value int
-	Span
+	trace.Span
 }
 type BoolVal struct {
 	Value bool
-	Span
+	trace.Span
 }
 type ListVal struct {
 	Values []Value
-	Span
+	trace.Span
 }
 type StructVal struct {
 	KeyValues []KeyValue
-	Span
+	trace.Span
 }
 type FieldPathVal Identish
 type RefTypeVal RefModifier
 type PrimitiveTypeVal Identish
+type CompoundTypeVal KeyishModifier
 
 
 type Decl interface{}
 type SubtypeBody interface{
-	Spannable
+	trace.Spannable
 }
-type Spannable interface {
-	SpanStart() lexer.Position
-	SpanEnd() lexer.Position
-}
+
 type AbstractMarker struct {
 	Name Identish
 
 	Parameters *ParameterList
 
-	Span
+	trace.Span
 }
 
 type ParameterList struct {
 	Params []KeyValue
 
-	Span
+	trace.Span
 }
 
 type KeyValue struct {
 	Key Identish
 	Value Value
 
-	Span
+	trace.Span
 }
 
 type KindDecl struct {
@@ -147,12 +140,15 @@ type KindDecl struct {
 	Markers []AbstractMarker
 
 	Name Identish
-	NameSpan Span
 
 	Fields []Field
 	Subtypes []SubtypeDecl
 
-	Span
+	// TODO: nonpersisted
+
+	ResolvedName *ResolvedNameInfo
+
+	trace.Span
 }
 
 type Field struct {
@@ -161,44 +157,48 @@ type Field struct {
 
 	Name Identish
 	Modifiers ModifierList
+	ResolvedType *ResolvedTypeInfo
+	Embedded bool
 
-	Span
+	// TODO: inline
+
+	trace.Span
 }
 
 type ModifierList []Modifier
-func (m ModifierList) SpanStart() lexer.Position {
+func (m ModifierList) SpanStart() trace.TokenPosition {
 	if len(m) > 0 {
 		return m[0].SpanStart()
 	}
-	return lexer.Position{}
+	return trace.TokenPosition{}
 }
-func (m ModifierList) SpanEnd() lexer.Position {
+func (m ModifierList) SpanEnd() trace.TokenPosition {
 	if len(m) > 0 {
 		return m[len(m)-1].SpanEnd()
 	}
-	return lexer.Position{}
+	return trace.TokenPosition{}
 }
 
 type Modifier interface{
-	Spannable
+	trace.Spannable
 }
 
 type KeyishModifier struct {
 	Name Identish
 	Parameters *ParameterList
 
-	Span
+	trace.Span
 }
 type RefModifier struct {
 	GroupVersion *GroupVersionRef
 	Name Identish
 
-	Span
+	trace.Span
 }
 
 type Identish struct {
 	Name string
-	Span
+	trace.Span
 }
 func IdentFrom(name string, tok lexer.Token) Identish {
 	return Identish{
@@ -213,7 +213,7 @@ type EnumVariant struct {
 
 	Name Identish
 
-	Span
+	trace.Span
 }
 
 type SubtypeDecl struct {
@@ -224,32 +224,44 @@ type SubtypeDecl struct {
 
 	Body SubtypeBody
 
-	Span
+	ResolvedName *ResolvedNameInfo
+
+	trace.Span
 }
 
 type Newtype struct {
 	Modifiers ModifierList
+	ResolvedType *ResolvedTypeInfo
 
-	Span
+	trace.Span
 }
 
 type Struct struct {
 	Fields []Field
 	Subtypes []SubtypeDecl
 
-	Span
+	trace.Span
 }
 type Union struct {
 	Variants []Field
 	Subtypes []SubtypeDecl
 
-	Span
+	// TODO: tagged vs untagged
+	Tag string
+	Untagged bool
+
+	trace.Span
 }
 type Enum struct {
 	Variants []EnumVariant
 
-	Span
+	trace.Span
 }
 type Validation struct {
-	Span
+	trace.Span
+}
+
+func In(ctx context.Context, node trace.Spannable) context.Context {
+	// TODO
+	return trace.InSpan(ctx, node)
 }

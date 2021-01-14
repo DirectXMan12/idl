@@ -61,6 +61,7 @@ group-version(group:"core", version:"v1") {
 			// create-only fields are immutable after creation (see immutability KEP)
 			containers: create-only list-map(value: Container),
 			struct Container {
+                name: string,
 				// ...
 			}
 		}
@@ -72,7 +73,7 @@ group-version(group:"core", version:"v1") {
 		}
 	}
 
-	newtype DNSLabel: string as(format: "dns-label");
+	newtype DNSLabel: string validates(pattern: "[a-z0-9]([-a-z0-9]*[a-z0-9])?", max-length: 64);
 
 	struct Volume {
 		name: DNSLabel,
@@ -95,11 +96,14 @@ group-version(group:"core", version:"v1") {
 
 	// enums represent one choice of a series of constant string values
 	enum DNSPolicy {
+        /// resolve cluster first, without host networking
 		ClusterFirstWithHostNet,
+        /// resolve cluster first
 		ClusterFirst,
+        /// resolve in the default order
 		Default,
-		//None, // TODO: trailing comma
-		None
+        /// don't resolve DNS
+		None,
 	}
 
 	struct SecretProjection {
@@ -107,7 +111,7 @@ group-version(group:"core", version:"v1") {
 		// in systems where this is supported (e.g. JSON, Go).  In systems
 		// where not supported, generally just use the type name as the field
 		// name.  Only structs and unions may be inlined.
-        
+
         // "raw identifiers" are surrounded with backticks, and take two purposes
         // the first is to allow fields and keys that have the same name as keywords
         // (like below).
