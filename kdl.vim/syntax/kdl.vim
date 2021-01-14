@@ -1,7 +1,7 @@
 " keywords
-syntax keyword kdlGroupVersionK groupVersion
+syntax match kdlGroupVersionK "group-version"
 syntax keyword kdlBlockTypeK kind struct enum union
-syntax keyword kdlNewtypeK newtype
+syntax keyword kdlNewtypeK wrapper
 
 " Param list & operators
 syntax region kdlParamList start="(" end=")" contains=kdlParamKey,kdlColon,kdlComma,@kdlValue
@@ -25,7 +25,7 @@ syntax keyword kdlInlineTypeK set nextgroup=kdlParamList
 syntax match kdlInlineTypeM 'list-map\|list\|simple-map' nextgroup=kdlParamList
 syntax keyword kdlPrimitiveTypeK string time duration int32 int64 quantity
 syntax keyword kdlCompoundModK optional as nextgroup=kdlParamList
-syntax match kdlSimpleModK "create-only\|inline"
+syntax match kdlSimpleModK "create-only"
 syntax keyword kdlDangerousTypeK dangerousfloat64
 syntax cluster kdlTypeSpec contains=kdlInlineTypeK,kdlInlineTypeM,kdlPrimitiveTypeK,kdlCompoundModK,kdlSimpleModK,kdlParamList,kdlDangerousTypeK
 
