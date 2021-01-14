@@ -1,0 +1,321 @@
+// a note on syntax for this file: the syntax for this file
+// roughly follows the [pest](https://pest.rs) syntax, for
+// various historical reasons & since there's no single standard
+// for ebnf.
+//
+// TL;DR:
+// - `~` means adjacent, but can include whitespace or comments
+// - `*`, `+`, `?`, `|`, and parentheses have their usual meanings
+// - `@` before the braces of a rule indicates that no whitespace
+//   or comments may be present between tokens unless explicitly
+//   noted (i.e. `~` means *immediately adjacent*).
+// - `!` means look-ahead negation, so `!NEWLINE ~ ANY` means any
+//   character that's not a newline.
+
+file = { SOI ~ imports? ~ qualified_decl+ ~ group_version+ ~ EOI }
+
+// imports may either be types or marker (see below)
+// defintions
+imports = { (import_one | import_both) }
+
+// there's a short form for when you only need one in a file
+import_one = { "import" ~ (import_types | import_markers) }
+import_both = { "import" ~ "(" ~ import_types ~ import_markers ~ ")" }
+
+// all types fall under a group-version.  Multiple
+// group-versions may be specified per file, and we can mark
+// that we need specific group-versions from a file.
+//
+// Explicitly calling out the group-versions that we need
+// makes it a *lot* more obvious what comes from where.
+// Types are imported from kdl files (source or compiled),
+// whose paths are specified via the given string.
+import_types = { "types" ~ "(" ~ type_import* ~ ")" }
+type_import = { "{" ~ (group_version_ident ~ "," )* "}" ~ "from" ~ string ~ ";" }
+
+// markers are imported by giving them an alias prefix (much
+// like `import ( alias "pkg" )` in Go).
+import_markers = { "markers" ~ "(" ~ marker_import* ~ ")" }
+marker_import = { key ~ "from" ~ string ~ ";" }
+
+group_version_ident = @{ group_name ~ "/" ~ version_name }
+
+// Grammar note: no extra newlines or additional comments may occur between
+// docs, markers, and the things that the describe.  This is not directly
+// expressed in the grammar below to make it more readable.
+
+// Grammar note: in many cases, named_param_lists will have an effective set of
+// allowed values.  These will be noted in the comments like `PARAMS(param: type, param: type)`.
+
+// qualified types are a shorthand for specifying a type in a
+// group-version in a non-nested form.  This may be useful for
+// very long files where a periodic reminder is useful, or if 
+// you want a single file with one type across several group-versions,
+// and don't want to repeat the nesting.
+//
+// For example,
+//
+// ```
+// group-version(group: "core", version: "v1") {}
+//
+// kind core/v1::Pod {}
+// enum core/v1::ConditionStatus {}
+// ```
+//
+// is equivalent to
+//
+// ```
+// group-version(group: "core", version: "v1") {
+//    kind Pod {}
+//    enum ConditionStatus {}
+// }
+// ```
+//
+// The equivalent group-versions must still be specified elsewhere in the file
+// even if they are empty.  You can use the empty group-version declarations
+// to attach markers and documentation to the group-version.
+qualified_decl = { doc? ~ markers? ~ (qualified_kind_decl | qualified_struct_decl | qualified_union_decl | qualified_enum_decl | qualified_wrapper_decl) }
+
+// PARAMS(group: string, version: string)
+group_version = { doc? ~ markers? ~ "group-version" ~ named_param_list ~ "{" ~ decl+ ~ "}" }
+
+// documentation takes the form of syntactically distinct
+// comments (they start with `///`, as in TypeScript, Rust,
+// C#, etc, to easily distinguish them from normal comments
+// and avoid mistakes).
+doc = @{ ((" " | "\t")* ~ (doc_empty | doc_content | doc_section))+ }
+doc_empty = @{ "///" ~ NEWLINE }
+doc_content = @{ "/// " ~  ((!(NEWLINE | "#") ~ ANY) ~ (!NEWLINE ~ ANY)*)? ~ NEWLINE }
+// documentation lines that start with `#` indicate a
+// documentation section.   The supported sections are
+// the default one ("description"), `Example`, and `External
+// Reference` (for external links to more documentation).
+// They roughly correspond to OpenAPI fields.
+//
+// For example
+//
+// ```
+// This is the description, and gets put in "description"
+// # Example
+// {"this": "stuff goes in the example field"}
+// ```
+doc_section = @{ "/// #" ~ (!NEWLINE ~ ANY)+ ~ NEWLINE }
+
+// all "parameters" given to types, markers, type-modifiers,
+// etc take the form of lists of key-value pairs.  All
+// arguments *must* have a keyword (no positional arguments)
+// -- this makes future modifications, changing of behavior,
+// etc much easier, and makes it much more obvious what a
+// given parameter means.
+named_param_list = { "(" ~ key_value ~ ("," ~ key_value)* ~ ")" }
+
+// Parsing note: keys & certain field names have a syntax that appears to 
+// overlap with keywords.  This is not allowed -- key & field_ident implicitly
+// exclude keywords, and raw keys/raw identifiers may be used to get around this.
+// It's possible that we could relax this rule in the future, but we'll err on
+// the side of caution for now.
+
+key_value = { (key | raw_key) ~ ":" ~ value }
+// raw_keys are used as an escape hatch when a key would conflict with a keyword.
+raw_key = @{ "`" ~ key ~ "`" }
+key = @{ LOWERCASE_LETTER ~ (LOWERCASE_LETTER | "-" | DECIMAL_NUMBER)+ }
+
+// allowed values are a slight superset of JSON.  In
+// addition to JSON, we define 2 new value types to make
+// structured type-checking easier: types and fieldPaths.
+// we also allow "key" values where string keys would be
+// allowed in JSON.
+
+// Parsing note: trailing commas are always optional,
+// but expressing that in a grammar makes it less readable.
+
+value = { number | string | bool | struct_val | list_val | type_mod | field_path }
+struct_val = { "{" ~ (struct_kv ~ ",")* ~ "}" }
+struct_kv = { (key | raw_key | string) ~ ":" ~ value }
+list_val = { "[" ~ (value ~ ",")* ~ "]" }
+// field paths specify a particular field in an object,
+// which the type-checker can then confirm exists.  This is
+// mainly useful for ensuring that you don't typo things
+// like list-map key names, or certain markers.
+field_path = @{ "." ~ field_identifier }
+
+// declarations are either "kinds" or some sub-type that may
+// be referenced in a kind.
+//
+// struct-like declarations (kinds, struct-subtypes, and
+// union-subtypes) may have nested declarations.  This
+// provides some automatic namespacing, and makes it
+// possible to place single-use types adjacent to their
+// usage (no more skipping back and forth between definition
+// and usage in a long file).
+decl = { doc? ~ markers? ~ (kind_decl | struct_decl | union_decl | enum_decl | wrapper_decl) }
+
+// Type identifiers are PascalCase (upper-case first
+// letter), to distinguish them from field identifiers,
+// which are camelCase (lower-case first letter).
+// This matches the Kubernetes API conventions.
+type_identifier = @{ UPPERCASE_LETTER ~ ( LETTER | DECIMAL_NUMBER )+ }
+
+// kinds are identical to structs syntactically, but have
+// additional semantics: they're fundamentally "kinds" in
+// kubernetes, and thus automatically have typemeta,
+// corresponding list types, etc where appropriate.
+//
+// By default, kinds are considered to be "persisted", and
+// thus also hve objectmeta (turned off by setting
+// `nonpersisted`).
+// PARAMS(nonpersisted: bool)
+kind_decl = { "kind" ~ named_param_list? ~ type_identifier ~ "{" ~ struct_body ~ "}" }
+qualified_kind_decl = { "kind" ~ named_param_list? ~ qualified_type_ref ~ "{" ~ struct_body ~ "}" }
+
+struct_decl = { "struct" ~ type_identifier ~ "{" ~ struct_body ~ "}" }
+qualified_struct_decl = { "struct" ~ qualified_type_ref ~ "{" ~ struct_body ~ "}" }
+struct_body = { (field ~ ",") | decl)* }
+// a field is specified by identifying information before
+// the colon (name, proto tag), and type & validation
+// information after.
+//
+// Field names are `camelCase` (lower-case first letter),
+// directly equivalent to their JSON forms.
+//
+// Inline fields use `_` instead of a field name
+field = { doc? ~ markers? ~ (field_identifier | raw_field_identifier | "_inline") ~ ":" ~ type_spec }
+// raw_field_identifiers avoid conflicts with keywords (like raw_key) and also provide an escape
+// hatch for violating field naming conventions for certain legacy cases.  By having a separate
+// syntax, we explicitly call out that this is strange and not supposed to be the common case.
+//
+// Namely: uppercase-first-letter is necessary for one mistake in core/v1, and shishkebab case
+// is necessary for the clientcmd (kubeconfig) API.
+raw_field_identifier = @{ "`" ~ LETTER ~ ( LETTER | DECIMAL_NUMBER | "-")+ ~ "`" }
+field_identifier = @{ LOWERCASE_LETTER ~ ( LETTER | DECIMAL_NUMBER )+ }
+
+// unions are effectively simple one-ofs (think
+// VolumeSource, HPA metric source, etc), with or without
+// a separate "tag" (a.k.a. discriminator) field.
+//
+// For instance, volume source (and many of the older APIs)
+// has no separate tag field, while HPA's metric source does.
+//
+// Union variants work like struct fields, except that they
+// cannot have the optional or inline keywords (since these
+// don't make sense for union variants).
+//
+// PARAMS(tag: string, untagged: bool)
+union_decl = { "union" ~ named_param_list? ~ type_identifier ~ "{" ~ union_body ~ "}" }
+qualified_union_decl = { "union" ~ named_param_list? ~ qualified_type_ref ~ "{" ~ union_body ~ "}" }
+union_body = { (field ~ ",") | decl)* }
+
+// enums are string-valued enumerations (think
+// ConditionStatus or ReclaimPolicy).  Each value is
+// specified as a TypeIdentifier and is serialized literally
+// in JSON, as per our API conventions.
+enum_decl = { "enum" ~ type_identifier ~ "{" ~ ((type_identifier ~ ",")* ~ "}") }
+qualified_enum_decl = { "enum" ~ qualified_type_ref ~ "{" ~ ((type_identifier ~ ",")* ~ "}") }
+
+// wrappers are aliases to other types with their own
+// semantics (e.g. extra validation, or some inherent
+// meaning).  Their syntax is intended to be reminiscent of
+// field declarations.
+wrapper_decl = { "wrapper" ~ type_identifier ~ ":" ~ type_spec ~ ";" }
+qualified_wrapper_decl = { "wrapper" ~ qualified_type_ref ~ ":" ~ type_spec ~ ";" }
+
+// a type-spec is a list of "type modifiers".  It must eventually
+// include exactly one concrete type, but this does not
+// have a bearing on the actual grammar.
+type_spec = { type_mod+ } // must include act_type at some point
+type_mod = { (key ~ named_param_list?) | type_ref }
+
+// valid modifiers include:
+// - primitives: string, int32, int64, quantity, time, duration, bytes, bool, int-or-string, dangerous-float64
+// - collection types: set(value: type), list-map(value: type, keys: list-of-types), list(value: type), simple-map(key: type, value: type)
+// - References: bare type identifiers, local type references, qualified type references
+// - behavior modifiers: optional(default: value), create-only, validates(...), preserves-unknown-fields, embedded-kind
+
+// lists are ordered atomic collections of types:
+//
+// list(value: type_mod)
+
+// sets are sets of items
+//
+// set(value: type_mod)
+
+// list-maps are ordered maps of items that serialize as lists
+//
+// list-map(value: type, key: list-of-field-paths)
+
+// simple-maps are unordered maps.  They're eventually restricted
+// to string-equivalent keys and largely primitive values, as per
+// the Kubernetes API conventions
+//
+// They are largely used for label sets, selectors,
+// and resource-list.
+//
+// We don't just call this "map" so that we make it clear
+// that k8s has two types of maps: one for primitives,
+// and another for compound types.  This is a confusing
+// point of the k8s API guidelines, so it's worth making
+// this more explicit in the IDL.
+//
+// simple-map(key: type, value: type)
+
+// the optional modifier is used to mark a field as optional,
+// or as "optional-but-defaulted" (in which case the field
+// appears as optional on writes, but will always be populated
+// with a value by the API server if one is not submitted)
+//
+// optional
+// optional(default: value)
+
+// the validated modifier is used to apply extra validation.
+// For the moment, it has keys equivalent to nearly all OpenAPI
+// fields, with the exception of the combinator fields and the
+// format field, which is represented by the primitives.
+//
+// validated(key: any, key: any, ...)
+
+// type references may be local or fully-qualified.
+//
+// Local references are resolved by first looking in the
+// parent declaration, then proceeding up till the
+// containing group-version).
+type_ref = { type_identifier | qualified_type_ref }
+// qualified types are *always* first qualified with
+// group-version (same syntax used for imports, specifying
+// apiVersion, etc), followed by a `::`-separated list of
+// nested types.
+qualified_type_ref = ${ group_ver ~ "::" ~ type_identifier ~ ("::" ~ type_identifier)* }
+
+// markers are the extension point for KDL.  They're
+// intended to be used to attach information specific to a
+// particular tool (e.g. k/k's go-gen, proto-gen, etc) or to
+// experiment with attaching additional semantics to the
+// language.
+markers = { marker* }
+marker = { "@" ~ key ~ named_param_list? }
+
+// normal comments are either single-line or multiline, just
+// like Go/C/Rust/etc
+line_comment = @{!"///" ~ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
+inline_comment = @{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+// these follow the JSON spec (except strings must be valid utf-8).
+// number explicitly excludes decimals, which do not exist in Kubernetes.
+number = @{ "-"? ~ non_zero_digit ~ ASCII_DIGIT* }
+string = @{ "\"" ~ str_char* ~ "\"" }
+str_char = @{ (!(NEWLINE | "\"" | "\\") ~ ANY) | ("\\" ~ escape) }
+escape = @{ "\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | ("u" ~ ASCII_HEX_DIGIT ~ ASCII_HEX_DIGIT ~ ASCII_HEX_DIGIT ~ ASCII_HEX_DIGIT) }
+non_zero_digit = @{ !"0" ~ ASCII_DIGIT }
+bool = { "true" | "false" }
+
+// bare group & version names have identical semantics to
+// their requirements in Kubernetes: groups are DNS
+// subdomains...
+group_name = @{ dns_label ~ ("." ~ dns_label)* } // DNS subdomain (RFC 1123)
+// ...and versions follow the structured forms outlined in the
+// CRD version sorting algorithm
+version_name = @{ "v" ~ non_zero_digit ~ ASCII_DIGIT* ~ (("alpha"|"beta") ~ non_zero_digit ~ ASCII_DIGIT*)? }
+dns_label = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER|"-"|ASCII_DIGIT){1,62} }
+
+WHITESPACE = _{" " | "\t" | "\r" | "\n" }
+COMMENT = @{ line_comment | inline_comment }
+KEYWORDS = { "true" | "false" | "group-version" | "kind" | "struct" | "enum" | "union" | "wrapper" | "import" | "types" | "markers" }
