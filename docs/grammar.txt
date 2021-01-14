@@ -266,12 +266,12 @@ type_mod = { (key ~ named_param_list?) | type_ref }
 // optional
 // optional(default: value)
 
-// the validated modifier is used to apply extra validation.
+// the validates modifier is used to apply extra validation.
 // For the moment, it has keys equivalent to nearly all OpenAPI
 // fields, with the exception of the combinator fields and the
 // format field, which is represented by the primitives.
 //
-// validated(key: any, key: any, ...)
+// validates(key: any, key: any, ...)
 
 // type references may be local or fully-qualified.
 //

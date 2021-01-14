@@ -17,11 +17,11 @@ group-version(group: "batch.tutorial.kubebuilder.io", version: "v1") {
             /// The schedule in Cron format
             /// # See Also
             /// https://en.wikipedia.org/wiki/Cron.
-            schedule: string validated(min-length: 0),
+            schedule: string validates(min-length: 0),
 
             /// deadline in seconds for starting the job if it misses scheduled
             /// time for any reason.  Missed jobs executions will be counted as failed ones.
-            startingDeadlineSeconds: optional int64 validated(minimum: 0),
+            startingDeadlineSeconds: optional int64 validates(minimum: 0),
 
             concurrencyPolicy: optional(default: Allow) ConcurrencyPolicy,
             enum ConcurrencyPolicy {
@@ -42,10 +42,10 @@ group-version(group: "batch.tutorial.kubebuilder.io", version: "v1") {
             jobTemplate: batch/v1::Job::Spec,
 
             /// The number of successful finished jobs to retain.
-            succesfulJobsHistoryLimit: optional(default: 3) int32 validated(minimum: 0),
+            succesfulJobsHistoryLimit: optional(default: 3) int32 validates(minimum: 0),
 
             /// The number of failed finished jobs to retain.
-            failedJobsHistoryLimit: optional(default: 1) int32 validated(minimum: 0),
+            failedJobsHistoryLimit: optional(default: 1) int32 validates(minimum: 0),
 
         }
         
@@ -54,7 +54,7 @@ group-version(group: "batch.tutorial.kubebuilder.io", version: "v1") {
             active: list(value: core/v1::ObjectReference),
 
             /// Information when was the last time the job was successfully scheduled.
-            lastScheduleTime: optional time;
+            lastScheduleTime: optional time,
         }
     }
 }
