@@ -36,12 +36,6 @@ group-version(group:"core", version:"v1") {
 
 			// ...
 
-			/*
-			// old default syntax
-			// defaults may be specified in the type signature with `[Value]`
-			dnsPolicy: optional DNSPolicy [ClusterFirst],
-			*/
-
 			dnsPolicy: optional(default: ClusterFirst) DNSPolicy,
 
 			// simple-maps are unordered maps from string-type values to

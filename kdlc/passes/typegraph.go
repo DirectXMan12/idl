@@ -235,8 +235,8 @@ func (c *checker) validListMap(ctx context.Context, listMap ir.ListMap) {
 			ctx = trace.Note(ctx, "name", key)
 			for _, field := range term.Struct.Fields {
 				if field.Name.Name == key {
-					// TODO: does the key field have to be valid string?
-					// TODO: check that type
+					// TODO: check that type is scalar:
+					// ( https://github.com/kubernetes-sigs/structured-merge-diff/issues/115#issuecomment-544759657 )
 					continue KeyLoop
 				}
 			}
