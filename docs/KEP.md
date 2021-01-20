@@ -2,16 +2,26 @@
 
 <!-- toc -->
 - [Release Signoff Checklist](#release-signoff-checklist)
-- [Summary](#summary)
-- [Motivation](#motivation)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
+- [A bit of background](#a-bit-of-background)
+- [Who interacts with our types?](#who-interacts-with-our-types)
+- [What problems do we have now...](#what-problems-do-we-have-now)
+  - [...as API Authors?](#as-api-authors)
+    - [Pseudo-IDL is hard to write properly](#pseudo-idl-is-hard-to-write-properly)
+    - [Pseudo-IDL is unfriendly to non-Go programmers](#pseudo-idl-is-unfriendly-to-non-go-programmers)
+    - [Pseudo-IDL is not one-to-one with the k8s type system](#pseudo-idl-is-not-one-to-one-with-the-k8s-type-system)
+  - [...as API consumers](#as-api-consumers)
+    - [Generation of CRD YAML is unfriendly to non-Go environments](#generation-of-crd-yaml-is-unfriendly-to-non-go-environments)
+    - [Wire formats are strongly tied to source formats](#wire-formats-are-strongly-tied-to-source-formats)
+    - [Pseudo-IDL is hard to review](#pseudo-idl-is-hard-to-review)
+  - [...as tooling maintainers?](#as-tooling-maintainers)
+- [Goals](#goals)
+- [Non-Goals](#non-goals)
 - [Proposal](#proposal)
-  - [User Stories (Optional)](#user-stories-optional)
-    - [Story 1](#story-1)
-    - [Story 2](#story-2)
-  - [Notes/Constraints/Caveats (Optional)](#notesconstraintscaveats-optional)
+  - [Syntax](#syntax)
+  - [Output Scope](#output-scope)
+  - [Architecture](#architecture)
   - [Risks and Mitigations](#risks-and-mitigations)
+  - [Compatibility](#compatibility)
 - [Design Details](#design-details)
   - [Test Plan](#test-plan)
   - [Graduation Criteria](#graduation-criteria)
@@ -21,7 +31,12 @@
 - [Implementation History](#implementation-history)
 - [Drawbacks](#drawbacks)
 - [Alternatives](#alternatives)
-- [Infrastructure Needed](#infrastructure-needed-optional)
+  - [OpenAPI](#openapi)
+  - [Proto](#proto)
+  - [Others](#others)
+- [Infrastructure Needed](#infrastructure-needed)
+- [Addendum: Footnotes](#addendum-footnotes)
+  - [1. core/v1 Mistakes](#1-corev1-mistakes)
 <!-- /toc -->
 
 ## Release Signoff Checklist
@@ -123,6 +138,9 @@ and such due to somewhat organic branching evolution.
 It's pretty easy to make mistakes when writing markers, JSON, and proto
 tags.  Consider:
 
+<details>
+<summary>an example</summary>
+
 ```go
 type MyType struct {
     ANumber int `json:"thenumber"`
@@ -136,7 +154,7 @@ type MyType struct {
 }
 ```
 
-There's three mistakes in the above example: 
+There are three mistakes in the above example:
 
 ```go
 type MyType struct {
@@ -160,8 +178,11 @@ type MyType struct {
 }
 ```
 
+</details>
+
 The root issue in of each of these mistakes can be found in the following
-causes:
+causes, each of which can be seen in our own codebase
+[<sup>1</sup>](#1-corev1-mistakes):
 
 1. There are 3-4 different places & syntaxes that affect any given type or
    field (raw Go type information, JSON & proto struct tags, markers)
@@ -171,27 +192,10 @@ causes:
 
 3. It's easy to typo or misplace markers and struct tags in ways that
    don't get caught until much later.
- 
+
 4. These things are often simply copied from place to place without full
    understanding of them or the implications of getting them wrong, due to
    their complicated & redundant manner.
-
-We can see practical examples of this in our own codebase, in the core/v1
-API group:
-
-- We completely ignore the actual value of most proto tags data when
-  generating (see [go-to-protobuf][ignored-proto]), leading to largely
-  nonsensical proto tags in the actual codebase (e.g. [non-slice fields
-  being marked as `rep`][proto-rep])
-
-- We've published APIs with uppercase field names [because we missed
-  a syntax error in code review][upper-field-name]
-
-[ignored-proto]: https://github.com/kubernetes/code-generator/blob/8cc0d294774b931ef40bb2f1fb3a7bc06343ffa9/cmd/go-to-protobuf/protobuf/generator.go#L574
-
-[proto-rep]: https://github.com/kubernetes/api/blob/master/core/v1/types.go#L35://github.com/kubernetes/api/blob/c873f2e8ab25481376d5b50b9d22719d6b2a1511/core/v1/types.go#L1597
-
-[upper-field-name]: https://github.com/kubernetes/api/blob/c873f2e8ab25481376d5b50b9d22719d6b2a1511/core/v1/types.go#L1597
 
 #### Pseudo-IDL is unfriendly to non-Go programmers
 
@@ -255,14 +259,14 @@ instead of giant structs where you have to set only one field).
 * Duplicated efforts: [k8s.io/code-generator][code-generator] and
   [controller-gen][controller-tools] use different tooling to generate
   code & artifacts from markers.  This results in:
-  
+
   * duplicated maintenance effort
   * slightly differing semantics
   * generation modules written in the less flexible k8s.io/code-generator
     cannot easily being incompatible with controller-gen
 
 * Difficulty parsing:
-  
+
   * a full Go parser & type-checker are required (due to aliasing over
     primitives, dot imports, etc), as well as a full Go standard library
 
@@ -459,25 +463,7 @@ when drafting this test plan.
 
 ### Graduation Criteria
 
-### Upgrade / Downgrade Strategy
-
-N/A (this is not a feature of kubernetes-the system)
-
-### Version Skew Strategy
-
-N/A (this is not a feature of kubernetes-the system)
-
-## Production Readiness Review Questionnaire
-
-N/A (this is not a feature of kubernetes-the system)
-
 ## Implementation History
-
-## Drawbacks
-
-<!--
-Why should this KEP _not_ be implemented?
--->
 
 ## Alternatives
 
@@ -603,3 +589,21 @@ the current syntax, see [the repository][repo-comparison].
 
 * **Site Hosting**: some place to put nicely-formatted tutorials and such,
   similar to the [KubeBuilder book][kb].
+
+## Addendum: Footnotes
+
+### 1. core/v1 Mistakes
+
+- We completely ignore the actual value of most proto tags data when
+  generating (see [go-to-protobuf][ignored-proto]), leading to largely
+  nonsensical proto tags in the actual codebase (e.g. [non-slice fields
+  being marked as `rep`][proto-rep])
+
+- We've published APIs with uppercase field names [because we missed
+  a syntax error in code review][upper-field-name]
+
+[ignored-proto]: https://github.com/kubernetes/code-generator/blob/8cc0d294774b931ef40bb2f1fb3a7bc06343ffa9/cmd/go-to-protobuf/protobuf/generator.go#L574
+
+[proto-rep]: https://github.com/kubernetes/api/blob/master/core/v1/types.go#L35://github.com/kubernetes/api/blob/c873f2e8ab25481376d5b50b9d22719d6b2a1511/core/v1/types.go#L1597
+
+[upper-field-name]: https://github.com/kubernetes/api/blob/c873f2e8ab25481376d5b50b9d22719d6b2a1511/core/v1/types.go#L1597

@@ -1,5 +1,14 @@
 # IDL Syntax
 
+<!-- toc -->
+- [Design Goals](#design-goals)
+- [Examples](#examples)
+- [Design Notes](#design-notes)
+  - [Uhhh, where are the proto tags?](#uhhh-where-are-the-proto-tags)
+  - [What's up with markers?](#whats-up-with-markers)
+- [Formal(-ish) Grammar](#formal-ish-grammar)
+<!-- /toc -->
+
 ## Design Goals
 
 1. High-level concepts and primitives in kubernetes should have
@@ -49,94 +58,94 @@ easier to comment.
 
 /// core/v1 describes core k8s concepts
 group-version(group:"core", version:"v1") {
-	/// Pod is a group of related, colocated processes
-	///
-	/// # Example
-	/// {"apiVersion": "v1", "kind": "Pod", "spec": {}}
-	kind Pod {
-		// types may be nested -- this is just a convininence for namespacing
-		// it does not imply privacy or anything
+    /// Pod is a group of related, colocated processes
+    ///
+    /// # Example
+    /// {"apiVersion": "v1", "kind": "Pod", "spec": {}}
+    kind Pod {
+        // types may be nested -- this is just a convininence for namespacing
+        // it does not imply privacy or anything
 
-		spec: Spec,
-		struct Spec {
-			// list-maps are ordered maps whose keys appear in their body.
-			// not specifying a key defaults to `key: name`.
-			// Go represets them as lists with specific merge keys, other
-			// languages may represent them other ways.
-			// They are automatically merged as maps in SMD.
+        spec: Spec,
+        struct Spec {
+            // list-maps are ordered maps whose keys appear in their body.
+            // not specifying a key defaults to `key: name`.
+            // Go represets them as lists with specific merge keys, other
+            // languages may represent them other ways.
+            // They are automatically merged as maps in SMD.
 
-			// optional fields must list the keyword `optional` before the
-			// type.
+            // optional fields must list the keyword `optional` before the
+            // type.
 
-			/// list of volumes that can be mounted by containers belonging to
-			/// the pod
-			volumes: optional list-map(value: Volume),
+            /// list of volumes that can be mounted by containers belonging to
+            /// the pod
+            volumes: optional list-map(value: Volume),
 
-			// ...
+            // ...
 
-			dnsPolicy: optional(default: ClusterFirst) DNSPolicy,
+            dnsPolicy: optional(default: ClusterFirst) DNSPolicy,
 
-			// simple-maps are unordered maps from string-type values to
-			// primitive values
-			nodeSelector: optional simple-map(value: string),
+            // simple-maps are unordered maps from string-type values to
+            // primitive values
+            nodeSelector: optional simple-map(value: string),
 
-			// ...
+            // ...
 
-			@deprecated(msg: "use serviceAccountName instead")
-			serviceAccount: optional string,
+            @deprecated(msg: "use serviceAccountName instead")
+            serviceAccount: optional string,
 
-			// ...
+            // ...
 
-			readinessGates: optional list(value: ReadinessGate),
-			struct ReadinessGate { }
+            readinessGates: optional list(value: ReadinessGate),
+            struct ReadinessGate { }
 
-			// create-only fields are immutable after creation (see immutability KEP)
-			containers: create-only list-map(value: Container),
-			struct Container {
+            // create-only fields are immutable after creation (see immutability KEP)
+            containers: create-only list-map(value: Container),
+            struct Container {
                 name: string,
-				// ...
-			}
-		}
+                // ...
+            }
+        }
 
-		status: Status,
+        status: Status,
 
-		struct Status {
+        struct Status {
 
-		}
-	}
+        }
+    }
 
-	wrapper DNSLabel: string validates(pattern: "[a-z0-9]([-a-z0-9]*[a-z0-9])?", max-length: 64);
+    wrapper DNSLabel: string validates(pattern: "[a-z0-9]([-a-z0-9]*[a-z0-9])?", max-length: 64);
 
-	struct Volume {
-		name: DNSLabel,
-		source: Source,
+    struct Volume {
+        name: DNSLabel,
+        source: Source,
 
-		// unions contain several variations, only one of which
-		// may be set at any given time.  By default, they have
-		// a tag of `type`.
-		// If a variant has no body, simply don't specify a tag.
-		union Source {
-			hostPath: HostPath,
-			struct HostPath {
-				path: string,
-			}
-			emptyDir: EmptyDir,
-			struct EmptyDir {}
-			// ...
-		}
-	}
+        // unions contain several variations, only one of which
+        // may be set at any given time.  By default, they have
+        // a tag of `type`.
+        // If a variant has no body, simply don't specify a tag.
+        union Source {
+            hostPath: HostPath,
+            struct HostPath {
+                path: string,
+            }
+            emptyDir: EmptyDir,
+            struct EmptyDir {}
+            // ...
+        }
+    }
 
-	// enums represent one choice of a series of constant string values
-	enum DNSPolicy {
+    // enums represent one choice of a series of constant string values
+    enum DNSPolicy {
         /// resolve cluster first, without host networking
-		ClusterFirstWithHostNet,
+        ClusterFirstWithHostNet,
         /// resolve cluster first
-		ClusterFirst,
+        ClusterFirst,
         /// resolve in the default order
-		Default,
+        Default,
         /// don't resolve DNS
-		None,
-	}
+        None,
+    }
 
     // markers are extensions that annotate fields or types with
     // additional data that can be picked up by tooling.
@@ -148,11 +157,11 @@ group-version(group:"core", version:"v1") {
     // marking fields as being behind feature gates for automated linting
     // and better documentation, etc.
 
-	struct SecretProjection {
-		// inline fields have their fields embedded in their parent object
-		// in systems where this is supported (e.g. JSON, Go).  In systems
-		// where not supported, generally just use the type name as the field
-		// name.  Only structs and unions may be inlined.
+    struct SecretProjection {
+        // inline fields have their fields embedded in their parent object
+        // in systems where this is supported (e.g. JSON, Go).  In systems
+        // where not supported, generally just use the type name as the field
+        // name.  Only structs and unions may be inlined.
 
         // "raw identifiers" are surrounded with backticks, and take two purposes
         // the first is to allow fields and keys that have the same name as keywords
@@ -160,18 +169,18 @@ group-version(group:"core", version:"v1") {
         //
         // The second is as an emergency "break glass" to violate the "field name must
         // have an lowercase first letter" constraint.
-		@reference(group: "v1", version: "core", `kind`: "Secret")
-		_inline: LocalObjectReference,
-	}
+        @reference(group: "v1", version: "core", `kind`: "Secret")
+        _inline: LocalObjectReference,
+    }
 
-	@reference(same-namespace: true)
-	struct LocalObjectReference {
-		// fields are referenced using `.name`
-		// (this avoids parsing ambiguities with primitive type names)
+    @reference(same-namespace: true)
+    struct LocalObjectReference {
+        // fields are referenced using `.name`
+        // (this avoids parsing ambiguities with primitive type names)
 
-		@reference-part(part: .name)
-		name: string,
-	}
+        @reference-part(part: .name)
+        name: string,
+    }
 
 }
 ```
