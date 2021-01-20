@@ -408,6 +408,28 @@ considered follow-up work after the MVP.
     this would involve significantly more work, and may not be worth it in
     the short term.
 
+### Compatibility
+
+As the output format (CKDL) is serialized as proto blobs, proper
+discipline with changes to CDKL should mean we get the built-in
+compatibility guarnatees of protobuf.  This means that CKDL files compiled
+with older compilers should work automatically with newer tooling, and
+vice versa.
+
+Likewise, since marker definitions are imported, it's possible to add new
+markers to the language without changing the syntax or compiler.
+Similarly, since marker defintions are effectively syntactic sugar over
+proto message definitions, the markers *themselves* benefit from the same
+guarantees as CKDL itself around compatibility.
+
+This leaves the KDL syntax itself.  It's expected that the syntax itself
+will not change frequently.  In the case of major syntax changes, the
+CKDL-to-KDL converter may be used to migrate source files.
+
+*If* major syntax changes are needed, a second version of the language may
+be introduced, with an equivalent major version in the file extensions
+(e.g. `file.kdl2`).
+
 ## Design Details
 
 See the [directxman12/idl][repo] repository for a working implementation
