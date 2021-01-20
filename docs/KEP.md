@@ -48,11 +48,7 @@ Items marked with (R) are required *prior to targeting to a milestone / release*
 [kubernetes/kubernetes]: https://git.k8s.io/kubernetes
 [kubernetes/website]: https://git.k8s.io/website
 
-## Summary
-
-## Motivation
-
-### A bit of background
+## A bit of background
 
 Through our API conventions & best practices, API mechanics, and implicit
 contracts, Kubernetes defines a type system for its API.  This type system
@@ -93,7 +89,7 @@ and such due to somewhat organic branching evolution.
 
 [kb]: https://book.kubebuilder.io
 
-### Who interacts with our types?
+## Who interacts with our types?
 
 * **API Authors** produce API definitions, commonly embedding other API
   types within their own (think PodTemplateSpec within a custom workloads
@@ -118,11 +114,11 @@ and such due to somewhat organic branching evolution.
   definitions into other forms (CRD YAML, API docs, Go deepcopy code,
   etc).
 
-### What problems do we have now...
+## What problems do we have now...
 
-#### ...as API Authors?
+### ...as API Authors?
 
-##### Pseudo-IDL is hard to write properly
+#### Pseudo-IDL is hard to write properly
 
 It's pretty easy to make mistakes when writing markers, JSON, and proto
 tags.  Consider:
@@ -197,7 +193,7 @@ API group:
 
 [upper-field-name]: https://github.com/kubernetes/api/blob/c873f2e8ab25481376d5b50b9d22719d6b2a1511/core/v1/types.go#L1597
 
-##### Pseudo-IDL is unfriendly to non-Go programmers
+#### Pseudo-IDL is unfriendly to non-Go programmers
 
 * Requiring a full Go toolchain for non-Go projects is cumbersome
   & potentially blocking for certain environments
@@ -205,7 +201,7 @@ API group:
 * Non-Go programmers are often hesitant to learn an entirely separate
   programming language, but are comfortable with learning an IDL
 
-##### Pseudo-IDL is not one-to-one with the k8s type system
+#### Pseudo-IDL is not one-to-one with the k8s type system
 
 * Go expresses concepts that we don't want or need in our "platonic" k8s
   IDL (e.g. interfaces, floats, aliasing string to int, complex maps)
@@ -221,9 +217,9 @@ API group:
   * This makes it harder to teach because there's no direct representation
     for these concepts natively.
 
-#### ...as API consumers
+### ...as API consumers
 
-##### Generation of CRD YAML is unfriendly to non-Go environments
+#### Generation of CRD YAML is unfriendly to non-Go environments
 
 * Writing Go code to generate CRDs makes little sense in environments
   without any pre-existing Go code
@@ -231,7 +227,7 @@ API group:
 * Generation is in-binary, making custom extensions (even those in Go)
   more difficult to write without requiring duplicate parsing passes
 
-##### Wire formats are strongly tied to source formats
+#### Wire formats are strongly tied to source formats
 
 Because we rely on Go types to serialize to JSON, experimenting with
 different structures in Go is difficult (e.g. it might rely on
@@ -242,7 +238,7 @@ types representation, it has occasionally come up that it'd be nice to
 experiment (e.g. types the preserve unknown fields round-trip, interfaces
 instead of giant structs where you have to set only one field).
 
-##### Pseudo-IDL is hard to review
+#### Pseudo-IDL is hard to review
 
 * For many of the reasons pseudo-IDL is [hard to
   write](#pseudo-idl-is-hard-to-write-properly), it's also hard to review:
@@ -254,7 +250,7 @@ instead of giant structs where you have to set only one field).
   (types vs validation vs defaulting), making it more difficult to review
   wholistically.
 
-#### ...as tooling maintainers?
+### ...as tooling maintainers?
 
 * Duplicated efforts: [k8s.io/code-generator][code-generator] and
   [controller-gen][controller-tools] use different tooling to generate
@@ -288,7 +284,7 @@ instead of giant structs where you have to set only one field).
   to be consumed by a different piece of tooling, or just happens to look
   like a marker.
 
-### Goals
+## Goals
 
 1. **Guide authors in the right direction**: it should be easy to write
    APIs that follow the Kubernetes API conventions and recommendations,
@@ -315,27 +311,27 @@ instead of giant structs where you have to set only one field).
    flexible enough to support developing them as future work by us or
    external tooling by third-party projects.
 
-### Non-Goals
+## Non-Goals
 
-* **Be a custom serialization format**: unlike proto, we’re not interested
-  in *directly* describing a serialization format.  Instead, we’re
-  interested in being able to output types.go, proto IDL, code suitable
-  for serializing in JSON, etc
+1. **Be a custom serialization format**: unlike proto, we’re not
+   interested in *directly* describing a serialization format.  Instead,
+   we’re interested in being able to output types.go, proto IDL, code
+   suitable for serializing in JSON, etc
 
-* **Support all features of OpenAPI**: the Kubernetes API guidelines
-  suggest avoiding certain OpenAPI constructs, while the structural schema
-  requirements explicitly reject others.  We’re interested in an IDL that
-  guides people down the right path, and that doesn’t support constructs
-  that aren’t allowed
+2. **Support all features of OpenAPI**: the Kubernetes API guidelines
+   suggest avoiding certain OpenAPI constructs, while the structural
+   schema requirements explicitly reject others.  We’re interested in an
+   IDL that guides people down the right path, and that doesn’t support
+   constructs that aren’t allowed
 
-* **Deprecate/replace OpenAPI everywhere**: it’s not currently intended
-  that this replace all uses of OpenAPI -- OpenAPI is still part of the
-  CRD specification, will still be published by the API server, etc.
+3. **Deprecate/replace OpenAPI everywhere**: it’s not currently intended
+   that this replace all uses of OpenAPI -- OpenAPI is still part of the
+   CRD specification, will still be published by the API server, etc.
 
-* **Change k/k’s Go type representation**: the existing codebase is large
-  and intricate.  For the sake of compatibility, initial efforts will
-  focus around generating 1-1 compatible Go with the code that exists
-  currently.
+4. **Change k/k’s Go type representation**: the existing codebase is
+   large and intricate.  For the sake of compatibility, initial efforts
+   will focus around generating 1-1 compatible Go with the code that
+   exists currently.
 
 ## Proposal
 
