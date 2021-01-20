@@ -151,8 +151,9 @@ type MyType struct {
 
     // - markers should be in the second-closest comment
     //   block, or closer.  Probably added a TODO without
-    //   realizing it would disrupt things // - "validation" was
-    misspelled // - probably did a find-replace that was case-insensitive
+    //   realizing it would disrupt things
+    // - "validation" was misspelled
+    // - probably did a find-replace that was case-insensitive
     //   by accident, and therefor added an uppercase json field
 
     // +kubebuilder:validation:Maximum=11
