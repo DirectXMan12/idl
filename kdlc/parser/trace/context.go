@@ -16,6 +16,8 @@ type ctxKey int
 const (
 	tracesKey ctxKey = iota
 	inputKey
+	errHandlerKey
+	hadErrKey
 )
 
 type TokenPosition struct {
@@ -294,12 +296,68 @@ func InSpan(ctx context.Context, sp Spannable) context.Context {
 	})
 }
 func ErrorAt(ctx context.Context, msg string) {
-	// TODO
-	fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
-	input, present := FullInputFrom(ctx)
-	if !present {
-		panic(msg)
+	handler, _ := ErrorHandlerFrom(ctx)
+	handler(ctx, msg, nil)
+}
+func ErrorAtSpan(ctx context.Context, loc Span) {
+	handler, _ := ErrorHandlerFrom(ctx)
+	handler(ctx, "", &loc)
+}
+
+func DefaultErrorHandler(ctx context.Context, msg string, loc *Span) {
+	MarkHadError(ctx)
+	fmt.Fprint(os.Stderr, "Error")
+	if msg != "" {
+		fmt.Fprintf(os.Stderr, ": %s", msg)
+	}
+	if loc != nil {
+		fmt.Fprintf(os.Stderr, " @ [%s, %s]", loc.Start, loc.End)
+	}
+	fmt.Fprintln(os.Stderr, "")
+	input, ok := FullInputFrom(ctx)
+	if !ok {
+		return
+	}
+	if loc != nil {
+		fmt.Fprintf(os.Stderr, "> %s\n", Snippet(*loc, input))
 	}
 	PrintTrace(ctx, os.Stderr, input)
+	fmt.Fprintln(os.Stderr, "")
 }
+
+type ErrorHandler func(ctx context.Context, msg string, loc *Span)
+
+func ErrorHandlerFrom(ctx context.Context) (ErrorHandler, bool) {
+	handler, ok := ctx.Value(errHandlerKey).(ErrorHandler)
+	if !ok {
+		return DefaultErrorHandler, false
+	}
+	return handler, true
+}
+
+func WithErrorHandler(ctx context.Context, handler ErrorHandler) context.Context {
+	return context.WithValue(ctx, errHandlerKey, handler)
+}
+
+func RecordError(ctx context.Context) context.Context {
+	hadErr := new(bool)
+	return context.WithValue(ctx, hadErrKey, hadErr)
+}
+
+func MarkHadError(ctx context.Context) {
+	hadErr, known := ctx.Value(hadErrKey).(*bool)
+	if !known {
+		return
+	}
+	*hadErr = true
+}
+
+func HadError(ctx context.Context) bool {
+	hadErr, known := ctx.Value(hadErrKey).(*bool)
+	if !known {
+		return false
+	}
+	return *hadErr
+}
+
 // TODO: In function that automatically attaches relevant info from ast nodes

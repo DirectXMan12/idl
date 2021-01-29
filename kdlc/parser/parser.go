@@ -5,7 +5,6 @@ package parser
 import (
 	"fmt"
 	"context"
-	"os"
 	"strings"
 	"strconv"
 	"unicode/utf8"
@@ -27,14 +26,7 @@ func New(input *lexer.Lexer) *Parser {
 	p := &Parser{
 		lex: input,
 		Error: func(ctx context.Context, loc Span) {
-			input, ok := FullInputFrom(ctx)
-			if !ok {
-				fmt.Fprintf(os.Stderr, "Error @ [%s, %s]\n", loc.Start, loc.End)
-				return
-			}
-			fmt.Fprintf(os.Stderr, "Error @ [%s, %s]\n> %s\n", loc.Start, loc.End, Snippet(loc, input))
-			PrintTrace(ctx, os.Stderr, input)
-			fmt.Fprintln(os.Stderr, "")
+			ErrorAtSpan(ctx, loc)
 		},
 	}
 	input.Error = func(ctx context.Context, at lexer.Position, unexpected rune, notes ...string) {
@@ -99,6 +91,28 @@ func (p *Parser) expectOrRecover(ctx context.Context, typ rune) lexer.Token {
 	p.markErrExp(ctx, tok, typ)
 
 	return p.recoverTill(ctx, typ)
+}
+
+func (p *Parser) recoverTillDeclEnd(ctx context.Context) lexer.Token {
+	var tok lexer.Token
+	blockCnt := 0
+SkipLoop:
+	for tok := p.next(ctx); tok.Type != lexer.EOF; tok = p.next(ctx) {
+		switch {
+		case blockCnt == 0 && tok.Type == ';':
+			break SkipLoop
+		case blockCnt == 1 && tok.Type == '}':
+			break SkipLoop
+		case blockCnt > 1 && tok.Type == '}':
+			blockCnt--
+		case tok.Type == '{':
+			blockCnt++
+		}
+	}
+	if tok.Type == lexer.EOF {
+		p.markErr(Describe(ctx, "unterminated declaration"), tok)
+	}
+	return tok
 }
 
 func (p *Parser) recoverTill(ctx context.Context, typ rune) lexer.Token {
@@ -751,7 +765,7 @@ func (p *Parser) parseSubtypeDeclRest(ctx context.Context) ast.SubtypeDecl {
 	default:
 		p.markErrExp(ctx, declKeyword, lexer.KWStruct, lexer.KWEnum, lexer.KWUnion, lexer.KWNewType)
 		// ... and recover
-		p.recoverTill(ctx, '}') // TODO: recover till semicolon for newtypes as well
+		p.recoverTillDeclEnd(ctx)
 		return ast.SubtypeDecl{}
 	}
 

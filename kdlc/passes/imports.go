@@ -100,7 +100,10 @@ func processFile(ctx context.Context, file io.Reader) *ast.DepSet {
 
 	for _, pass := range All {
 		pass(ctx, set)
-		// TODO: check for errors and stop
+		// check for errors & stop if we've been told to keep errors around
+		if trace.HadError(ctx) {
+			return set
+		}
 	}
 
 	return set
