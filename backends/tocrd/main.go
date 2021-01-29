@@ -9,8 +9,8 @@ import (
 	"encoding/json"
 	"bytes"
 
-	"k8s.io/idl/tocrd/irloader"
-	"k8s.io/idl/tocrd/crd"
+	"k8s.io/idl/backends/tocrd/irloader"
+	"k8s.io/idl/backends/tocrd/crd"
 )
 
 func main() {

@@ -1,8 +1,8 @@
-module k8s.io/idl/tocrd
+module k8s.io/idl/backends/tocrd
 
 go 1.15
 
-replace k8s.io/idl/ckdl-ir/goir => ../ckdl-ir/goir
+replace k8s.io/idl/ckdl-ir/goir => ../../ckdl-ir/goir
 
 require (
 	github.com/gobuffalo/flect v0.2.2

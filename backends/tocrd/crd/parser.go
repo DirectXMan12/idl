@@ -23,7 +23,7 @@ import (
 
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
-	"k8s.io/idl/tocrd/irloader"
+	"k8s.io/idl/backends/tocrd/irloader"
 	irt "k8s.io/idl/ckdl-ir/goir/types"
 	irgv "k8s.io/idl/ckdl-ir/goir/groupver"
 	ir "k8s.io/idl/ckdl-ir/goir"
