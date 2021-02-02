@@ -12,6 +12,29 @@ message GroupVersion {
     repeated types.Subtype types = 3;
 }
 
-message GroupVersionSet {
+message Partial {
     repeated GroupVersion group_versions = 1;
+    repeated Dependency dependencies = 2;
+
+    repeated Location source_map = 3;
+
+    message Dependency {
+        types.GroupVersionRef group_version = 1;
+        string from = 2;
+    }
+
+}
+
+message Bundle {
+    message File {
+        string name = 1;
+        Partial contents = 2;
+    }
+    repeated File virtual_files = 1;
+}
+
+message Location {
+    repeated int32 path = 1;
+    // start col, start row, end col, end row
+    repeated int32 span = 2; // single field to get packend encoding
 }

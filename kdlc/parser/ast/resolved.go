@@ -40,11 +40,6 @@ type ValidatesInfo struct {
 	String *irc.String
 	List *irc.List
 	Objectish *irc.Object
-
-	// ExpectedType is populated by type-checking to hint
-	// at which underlying type is expected to be used
-	// (useful for references, etc)
-	ExpectedType ValidationType
 }
 
 type ValidationType int
@@ -69,7 +64,6 @@ type ResolvedTypeInfo struct {
 
 	Type ResolvedType
 	TypeSrc Modifier
-	Terminal TerminalType
 
 	Validates *ValidatesInfo
 	ValidatesSrc *KeyishModifier
@@ -79,24 +73,3 @@ type ResolvedNameInfo struct {
 	GroupVersion GroupVersionRef
 	FullName string
 }
-
-type TerminalType interface {isTerm()}
-type TerminalAlias struct {
-	Info *ResolvedTypeInfo
-}
-func (TerminalAlias) isTerm() {}
-type TerminalStruct struct{
-	Struct *Struct
-}
-func (TerminalStruct) isTerm() {}
-type TerminalUnion struct{
-	Union *Union
-}
-func (TerminalUnion) isTerm() {}
-type TerminalEnum struct{}
-func (TerminalEnum) isTerm() {}
-type TerminalKind struct{
-	Kind *KindDecl
-}
-func (TerminalKind) isTerm() {}
-

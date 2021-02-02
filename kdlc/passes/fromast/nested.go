@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2021 The Kubernetes Authors
-package passes
+package fromast
 
 import (
 	"context"
@@ -201,8 +201,7 @@ func (c *identCtx) resolveFields(ctx context.Context, fields []ast.Field) {
 // ResolveNested figures out the fully-qualified name for types, and resolves
 // unqualified references to those into qualified references.
 // It's the first pass that should be run.
-func ResolveNested(ctx context.Context, input *ast.DepSet) {
-	file := &input.Main
+func ResolveNested(ctx context.Context, file *ast.File) {
 	for i := range file.GroupVersions {
 		gv := &file.GroupVersions[i]
 		VisitGroupVersion(ctx, &identCtx{

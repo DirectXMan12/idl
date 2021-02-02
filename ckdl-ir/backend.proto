@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package kb.ir.backend;
+option go_package = "k8s.io/idl/ckdl-ir/goir/backend";
+
+message Response {
+    repeated File file = 1;
+
+    message File {
+        string name = 1;
+        bytes contents = 2;
+    }
+}
+
+message Log {
+    Level lvl = 1;
+    repeated Trace trace = 2;
+
+    enum Level {
+        INFO = 0;
+        ERROR = 1;
+    }
+
+    message Trace {
+        string message = 1;
+        repeated KeyValue values = 2;
+        Node node = 3;
+
+        message KeyValue {
+            string key = 1;
+            oneof value {
+                string str = 2;
+                Node other_node = 3;
+            }
+        }
+
+        message Node {
+            repeated int32 path = 1;
+        }   
+    }
+}

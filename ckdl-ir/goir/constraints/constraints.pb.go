@@ -290,6 +290,7 @@ type General struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
+	// Deprected: just use primitives
 	Format string `protobuf:"bytes,5,opt,name=format,proto3" json:"format,omitempty"`
 }
 

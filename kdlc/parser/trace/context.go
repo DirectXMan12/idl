@@ -169,7 +169,7 @@ type note struct {
 	key string
 	value interface{}
 }
-func PrintTrace(ctx context.Context, out io.Writer, input string) {
+func PrintTrace(ctx context.Context, out io.Writer, input *string) {
 	traces, ok := ctx.Value(tracesKey).(*Traces)
 	if !ok {
 		fmt.Fprintf(out, "[no trace]\n")
@@ -200,7 +200,7 @@ func PrintTrace(ctx context.Context, out io.Writer, input string) {
 	}
 }
 
-func printChunk(out io.Writer, input string, desc string, notes []note, span *Span) {
+func printChunk(out io.Writer, input *string, desc string, notes []note, span *Span) {
 	fmt.Fprintf(out, "  ...in %s", desc)
 	for _, note := range notes {
 		fmt.Fprintf(out, ", %s=", note.key)
@@ -223,11 +223,15 @@ func printChunk(out io.Writer, input string, desc string, notes []note, span *Sp
 		}
 	}
 	if span != nil {
+		snip := ""
+		if input != nil {
+			snip = Snippet(*span, *input)
+		}
 		if span.Complete() {
-			fmt.Fprintf(out, " @ [%s, %s]\n\t%s", span.Start, span.End, Snippet(*span, input))
+			fmt.Fprintf(out, " @ [%s, %s]\n\t%s", span.Start, span.End, snip)
 		} else {
 			// TODO: partial snippet
-			fmt.Fprintf(out, " @ [%s, <incomplete>]\n\t%s", span.Start, Snippet(*span, input))
+			fmt.Fprintf(out, " @ [%s, <incomplete>]\n\t%s", span.Start, snip)
 		}
 	}
 	fmt.Fprintln(out, "")
@@ -314,14 +318,15 @@ func DefaultErrorHandler(ctx context.Context, msg string, loc *Span) {
 		fmt.Fprintf(os.Stderr, " @ [%s, %s]", loc.Start, loc.End)
 	}
 	fmt.Fprintln(os.Stderr, "")
+	var maybeInput *string
 	input, ok := FullInputFrom(ctx)
-	if !ok {
-		return
+	if ok {
+		maybeInput = &input
 	}
-	if loc != nil {
+	if maybeInput != nil && loc != nil {
 		fmt.Fprintf(os.Stderr, "> %s\n", Snippet(*loc, input))
 	}
-	PrintTrace(ctx, os.Stderr, input)
+	PrintTrace(ctx, os.Stderr, maybeInput)
 	fmt.Fprintln(os.Stderr, "")
 }
 

@@ -90,16 +90,18 @@ func (x *GroupVersion) GetTypes() []*types.Subtype {
 	return nil
 }
 
-type GroupVersionSet struct {
+type Partial struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	GroupVersions []*GroupVersion `protobuf:"bytes,1,rep,name=group_versions,json=groupVersions,proto3" json:"group_versions,omitempty"`
+	GroupVersions []*GroupVersion       `protobuf:"bytes,1,rep,name=group_versions,json=groupVersions,proto3" json:"group_versions,omitempty"`
+	Dependencies  []*Partial_Dependency `protobuf:"bytes,2,rep,name=dependencies,proto3" json:"dependencies,omitempty"`
+	SourceMap     []*Location           `protobuf:"bytes,3,rep,name=source_map,json=sourceMap,proto3" json:"source_map,omitempty"`
 }
 
-func (x *GroupVersionSet) Reset() {
-	*x = GroupVersionSet{}
+func (x *Partial) Reset() {
+	*x = Partial{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_envelope_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -107,13 +109,13 @@ func (x *GroupVersionSet) Reset() {
 	}
 }
 
-func (x *GroupVersionSet) String() string {
+func (x *Partial) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*GroupVersionSet) ProtoMessage() {}
+func (*Partial) ProtoMessage() {}
 
-func (x *GroupVersionSet) ProtoReflect() protoreflect.Message {
+func (x *Partial) ProtoReflect() protoreflect.Message {
 	mi := &file_envelope_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -125,14 +127,241 @@ func (x *GroupVersionSet) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use GroupVersionSet.ProtoReflect.Descriptor instead.
-func (*GroupVersionSet) Descriptor() ([]byte, []int) {
+// Deprecated: Use Partial.ProtoReflect.Descriptor instead.
+func (*Partial) Descriptor() ([]byte, []int) {
 	return file_envelope_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *GroupVersionSet) GetGroupVersions() []*GroupVersion {
+func (x *Partial) GetGroupVersions() []*GroupVersion {
 	if x != nil {
 		return x.GroupVersions
+	}
+	return nil
+}
+
+func (x *Partial) GetDependencies() []*Partial_Dependency {
+	if x != nil {
+		return x.Dependencies
+	}
+	return nil
+}
+
+func (x *Partial) GetSourceMap() []*Location {
+	if x != nil {
+		return x.SourceMap
+	}
+	return nil
+}
+
+type Bundle struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	VirtualFiles []*Bundle_File `protobuf:"bytes,1,rep,name=virtual_files,json=virtualFiles,proto3" json:"virtual_files,omitempty"`
+}
+
+func (x *Bundle) Reset() {
+	*x = Bundle{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_envelope_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Bundle) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Bundle) ProtoMessage() {}
+
+func (x *Bundle) ProtoReflect() protoreflect.Message {
+	mi := &file_envelope_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Bundle.ProtoReflect.Descriptor instead.
+func (*Bundle) Descriptor() ([]byte, []int) {
+	return file_envelope_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *Bundle) GetVirtualFiles() []*Bundle_File {
+	if x != nil {
+		return x.VirtualFiles
+	}
+	return nil
+}
+
+type Location struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Path []int32 `protobuf:"varint,1,rep,packed,name=path,proto3" json:"path,omitempty"`
+	// start col, start row, end col, end row
+	Span []int32 `protobuf:"varint,2,rep,packed,name=span,proto3" json:"span,omitempty"` // single field to get packend encoding
+}
+
+func (x *Location) Reset() {
+	*x = Location{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_envelope_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Location) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Location) ProtoMessage() {}
+
+func (x *Location) ProtoReflect() protoreflect.Message {
+	mi := &file_envelope_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Location.ProtoReflect.Descriptor instead.
+func (*Location) Descriptor() ([]byte, []int) {
+	return file_envelope_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Location) GetPath() []int32 {
+	if x != nil {
+		return x.Path
+	}
+	return nil
+}
+
+func (x *Location) GetSpan() []int32 {
+	if x != nil {
+		return x.Span
+	}
+	return nil
+}
+
+type Partial_Dependency struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	GroupVersion *types.GroupVersionRef `protobuf:"bytes,1,opt,name=group_version,json=groupVersion,proto3" json:"group_version,omitempty"`
+	From         string                 `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
+}
+
+func (x *Partial_Dependency) Reset() {
+	*x = Partial_Dependency{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_envelope_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Partial_Dependency) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Partial_Dependency) ProtoMessage() {}
+
+func (x *Partial_Dependency) ProtoReflect() protoreflect.Message {
+	mi := &file_envelope_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Partial_Dependency.ProtoReflect.Descriptor instead.
+func (*Partial_Dependency) Descriptor() ([]byte, []int) {
+	return file_envelope_proto_rawDescGZIP(), []int{1, 0}
+}
+
+func (x *Partial_Dependency) GetGroupVersion() *types.GroupVersionRef {
+	if x != nil {
+		return x.GroupVersion
+	}
+	return nil
+}
+
+func (x *Partial_Dependency) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+type Bundle_File struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Name     string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Contents *Partial `protobuf:"bytes,2,opt,name=contents,proto3" json:"contents,omitempty"`
+}
+
+func (x *Bundle_File) Reset() {
+	*x = Bundle_File{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_envelope_proto_msgTypes[5]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Bundle_File) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Bundle_File) ProtoMessage() {}
+
+func (x *Bundle_File) ProtoReflect() protoreflect.Message {
+	mi := &file_envelope_proto_msgTypes[5]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Bundle_File.ProtoReflect.Descriptor instead.
+func (*Bundle_File) Descriptor() ([]byte, []int) {
+	return file_envelope_proto_rawDescGZIP(), []int{2, 0}
+}
+
+func (x *Bundle_File) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Bundle_File) GetContents() *Partial {
+	if x != nil {
+		return x.Contents
 	}
 	return nil
 }
@@ -153,14 +382,39 @@ var file_envelope_proto_rawDesc = []byte{
 	0x65, 0x73, 0x2e, 0x4b, 0x69, 0x6e, 0x64, 0x52, 0x05, 0x6b, 0x69, 0x6e, 0x64, 0x73, 0x12, 0x2a,
 	0x0a, 0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x14, 0x2e,
 	0x6b, 0x62, 0x2e, 0x69, 0x72, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x75, 0x62, 0x74,
-	0x79, 0x70, 0x65, 0x52, 0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x22, 0x4d, 0x0a, 0x0f, 0x47, 0x72,
-	0x6f, 0x75, 0x70, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x53, 0x65, 0x74, 0x12, 0x3a, 0x0a,
-	0x0e, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x73, 0x18,
-	0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x6b, 0x62, 0x2e, 0x69, 0x72, 0x2e, 0x47, 0x72,
-	0x6f, 0x75, 0x70, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x52, 0x0d, 0x67, 0x72, 0x6f, 0x75,
-	0x70, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x73, 0x42, 0x19, 0x5a, 0x17, 0x6b, 0x38, 0x73,
-	0x2e, 0x69, 0x6f, 0x2f, 0x69, 0x64, 0x6c, 0x2f, 0x63, 0x6b, 0x64, 0x6c, 0x2d, 0x69, 0x72, 0x2f,
-	0x67, 0x6f, 0x69, 0x72, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x79, 0x70, 0x65, 0x52, 0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x22, 0x99, 0x02, 0x0a, 0x07, 0x50,
+	0x61, 0x72, 0x74, 0x69, 0x61, 0x6c, 0x12, 0x3a, 0x0a, 0x0e, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x5f,
+	0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x13,
+	0x2e, 0x6b, 0x62, 0x2e, 0x69, 0x72, 0x2e, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x56, 0x65, 0x72, 0x73,
+	0x69, 0x6f, 0x6e, 0x52, 0x0d, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f,
+	0x6e, 0x73, 0x12, 0x3d, 0x0a, 0x0c, 0x64, 0x65, 0x70, 0x65, 0x6e, 0x64, 0x65, 0x6e, 0x63, 0x69,
+	0x65, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x6b, 0x62, 0x2e, 0x69, 0x72,
+	0x2e, 0x50, 0x61, 0x72, 0x74, 0x69, 0x61, 0x6c, 0x2e, 0x44, 0x65, 0x70, 0x65, 0x6e, 0x64, 0x65,
+	0x6e, 0x63, 0x79, 0x52, 0x0c, 0x64, 0x65, 0x70, 0x65, 0x6e, 0x64, 0x65, 0x6e, 0x63, 0x69, 0x65,
+	0x73, 0x12, 0x2e, 0x0a, 0x0a, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x5f, 0x6d, 0x61, 0x70, 0x18,
+	0x03, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0f, 0x2e, 0x6b, 0x62, 0x2e, 0x69, 0x72, 0x2e, 0x4c, 0x6f,
+	0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x09, 0x73, 0x6f, 0x75, 0x72, 0x63, 0x65, 0x4d, 0x61,
+	0x70, 0x1a, 0x63, 0x0a, 0x0a, 0x44, 0x65, 0x70, 0x65, 0x6e, 0x64, 0x65, 0x6e, 0x63, 0x79, 0x12,
+	0x41, 0x0a, 0x0d, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1c, 0x2e, 0x6b, 0x62, 0x2e, 0x69, 0x72, 0x2e, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0x2e, 0x47, 0x72, 0x6f, 0x75, 0x70, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f,
+	0x6e, 0x52, 0x65, 0x66, 0x52, 0x0c, 0x67, 0x72, 0x6f, 0x75, 0x70, 0x56, 0x65, 0x72, 0x73, 0x69,
+	0x6f, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x66, 0x72, 0x6f, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x04, 0x66, 0x72, 0x6f, 0x6d, 0x22, 0x89, 0x01, 0x0a, 0x06, 0x42, 0x75, 0x6e, 0x64, 0x6c,
+	0x65, 0x12, 0x37, 0x0a, 0x0d, 0x76, 0x69, 0x72, 0x74, 0x75, 0x61, 0x6c, 0x5f, 0x66, 0x69, 0x6c,
+	0x65, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x12, 0x2e, 0x6b, 0x62, 0x2e, 0x69, 0x72,
+	0x2e, 0x42, 0x75, 0x6e, 0x64, 0x6c, 0x65, 0x2e, 0x46, 0x69, 0x6c, 0x65, 0x52, 0x0c, 0x76, 0x69,
+	0x72, 0x74, 0x75, 0x61, 0x6c, 0x46, 0x69, 0x6c, 0x65, 0x73, 0x1a, 0x46, 0x0a, 0x04, 0x46, 0x69,
+	0x6c, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x04, 0x6e, 0x61, 0x6d, 0x65, 0x12, 0x2a, 0x0a, 0x08, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e,
+	0x74, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0e, 0x2e, 0x6b, 0x62, 0x2e, 0x69, 0x72,
+	0x2e, 0x50, 0x61, 0x72, 0x74, 0x69, 0x61, 0x6c, 0x52, 0x08, 0x63, 0x6f, 0x6e, 0x74, 0x65, 0x6e,
+	0x74, 0x73, 0x22, 0x32, 0x0a, 0x08, 0x4c, 0x6f, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x12,
+	0x0a, 0x04, 0x70, 0x61, 0x74, 0x68, 0x18, 0x01, 0x20, 0x03, 0x28, 0x05, 0x52, 0x04, 0x70, 0x61,
+	0x74, 0x68, 0x12, 0x12, 0x0a, 0x04, 0x73, 0x70, 0x61, 0x6e, 0x18, 0x02, 0x20, 0x03, 0x28, 0x05,
+	0x52, 0x04, 0x73, 0x70, 0x61, 0x6e, 0x42, 0x19, 0x5a, 0x17, 0x6b, 0x38, 0x73, 0x2e, 0x69, 0x6f,
+	0x2f, 0x69, 0x64, 0x6c, 0x2f, 0x63, 0x6b, 0x64, 0x6c, 0x2d, 0x69, 0x72, 0x2f, 0x67, 0x6f, 0x69,
+	0x72, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -175,24 +429,34 @@ func file_envelope_proto_rawDescGZIP() []byte {
 	return file_envelope_proto_rawDescData
 }
 
-var file_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_envelope_proto_goTypes = []interface{}{
 	(*GroupVersion)(nil),          // 0: kb.ir.GroupVersion
-	(*GroupVersionSet)(nil),       // 1: kb.ir.GroupVersionSet
-	(*groupver.GroupVersion)(nil), // 2: kb.ir.groupver.GroupVersion
-	(*types.Kind)(nil),            // 3: kb.ir.types.Kind
-	(*types.Subtype)(nil),         // 4: kb.ir.types.Subtype
+	(*Partial)(nil),               // 1: kb.ir.Partial
+	(*Bundle)(nil),                // 2: kb.ir.Bundle
+	(*Location)(nil),              // 3: kb.ir.Location
+	(*Partial_Dependency)(nil),    // 4: kb.ir.Partial.Dependency
+	(*Bundle_File)(nil),           // 5: kb.ir.Bundle.File
+	(*groupver.GroupVersion)(nil), // 6: kb.ir.groupver.GroupVersion
+	(*types.Kind)(nil),            // 7: kb.ir.types.Kind
+	(*types.Subtype)(nil),         // 8: kb.ir.types.Subtype
+	(*types.GroupVersionRef)(nil), // 9: kb.ir.types.GroupVersionRef
 }
 var file_envelope_proto_depIdxs = []int32{
-	2, // 0: kb.ir.GroupVersion.description:type_name -> kb.ir.groupver.GroupVersion
-	3, // 1: kb.ir.GroupVersion.kinds:type_name -> kb.ir.types.Kind
-	4, // 2: kb.ir.GroupVersion.types:type_name -> kb.ir.types.Subtype
-	0, // 3: kb.ir.GroupVersionSet.group_versions:type_name -> kb.ir.GroupVersion
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	6, // 0: kb.ir.GroupVersion.description:type_name -> kb.ir.groupver.GroupVersion
+	7, // 1: kb.ir.GroupVersion.kinds:type_name -> kb.ir.types.Kind
+	8, // 2: kb.ir.GroupVersion.types:type_name -> kb.ir.types.Subtype
+	0, // 3: kb.ir.Partial.group_versions:type_name -> kb.ir.GroupVersion
+	4, // 4: kb.ir.Partial.dependencies:type_name -> kb.ir.Partial.Dependency
+	3, // 5: kb.ir.Partial.source_map:type_name -> kb.ir.Location
+	5, // 6: kb.ir.Bundle.virtual_files:type_name -> kb.ir.Bundle.File
+	9, // 7: kb.ir.Partial.Dependency.group_version:type_name -> kb.ir.types.GroupVersionRef
+	1, // 8: kb.ir.Bundle.File.contents:type_name -> kb.ir.Partial
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_envelope_proto_init() }
@@ -214,7 +478,55 @@ func file_envelope_proto_init() {
 			}
 		}
 		file_envelope_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*GroupVersionSet); i {
+			switch v := v.(*Partial); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_envelope_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Bundle); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_envelope_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Location); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_envelope_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Partial_Dependency); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_envelope_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Bundle_File); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -232,7 +544,7 @@ func file_envelope_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_envelope_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

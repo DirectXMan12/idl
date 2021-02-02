@@ -4,7 +4,6 @@ package passes
 
 import (
 	"context"
-	"log"
 
 	ir "k8s.io/idl/ckdl-ir/goir/types"
 
@@ -12,9 +11,68 @@ import (
 	"k8s.io/idl/kdlc/parser/trace"
 )
 
+type terminal interface {
+	Validation(ctx context.Context, r *resolver) ast.ValidationType
+	EnsureValidItem(ctx context.Context, listMap ir.ListMap)
+}
+
+type astTerm struct {
+	Type ast.TerminalType
+}
+func (t astTerm) Validation(ctx context.Context, r *resolver) ast.ValidationType {
+	switch term := t.Type.(type) {
+	case ast.TerminalAlias:
+		return r.validationForInfo(ctx, term.Info)
+	case ast.TerminalStruct:
+		return ast.ObjectishValidation
+	case ast.TerminalUnion:
+		return ast.ObjectishValidation
+	case ast.TerminalEnum:
+		return ast.NoValidation
+	case ast.TerminalKind:
+		// TODO(directxman12): should this be allowed?
+		return ast.ObjectishValidation
+	default:
+		panic("unreachable: unknown terminal type")
+	}
+}
+func (t astTerm) EnsureValidItem(ctx context.Context, listMap ir.ListMap) {
+	switch term := t.Type.(type) {
+	case ast.TerminalUnion:
+		union := term.Union
+		if union.Untagged || len(listMap.KeyField) != 1 || listMap.KeyField[0] != union.Tag {
+			trace.ErrorAt(ctx, "for unions to be used as list-map items, the key must be the union's tag")
+		}
+		return
+	case ast.TerminalStruct:
+		// TODO: make sure listMap key field is defaulted somewhere
+	KeyLoop:
+		for _, key := range listMap.KeyField {
+			ctx := trace.Describe(ctx, "key")
+			ctx = trace.Note(ctx, "name", key)
+			for _, field := range term.Struct.Fields {
+				if field.Name.Name == key {
+					// TODO: check that type is scalar:
+					// ( https://github.com/kubernetes-sigs/structured-merge-diff/issues/115#issuecomment-544759657 )
+					continue KeyLoop
+				}
+			}
+			trace.ErrorAt(ctx, "key of list-map not present in item")
+		}
+	case ast.TerminalKind:
+		trace.ErrorAt(ctx, "kinds may not be list-map items")
+	case ast.TerminalAlias:
+		trace.ErrorAt(ctx, "wrapper types may not be list-map items, unless they wrap a struct or union")
+	case ast.TerminalEnum:
+		trace.ErrorAt(ctx, "enum types may not be list-map items (try a set instead)")
+	default:
+		panic("unreachable: unknown terminal type")
+	}
+}
+
 type typegraph struct {
 	references map[ast.ResolvedNameInfo]ast.ResolvedNameInfo
-	terminals map[ast.ResolvedNameInfo]ast.TerminalType
+	terminals map[ast.ResolvedNameInfo]terminal
 	externals map[ast.GroupVersionRef]*typegraph
 }
 
@@ -28,7 +86,7 @@ func refToInfo(ref ir.Reference) ast.ResolvedNameInfo {
 	}
 }
 
-func (g *typegraph) terminalFor(ctx context.Context, orig ast.ResolvedNameInfo) ast.TerminalType {
+func (g *typegraph) terminalFor(ctx context.Context, orig ast.ResolvedNameInfo) terminal {
 	current := orig
 	for next, hasNext := g.references[current]; hasNext; next, hasNext = g.references[current] {
 		ctx = trace.Describe(ctx, "in reference")
@@ -46,9 +104,6 @@ func (g *typegraph) terminalFor(ctx context.Context, orig ast.ResolvedNameInfo) 
 		ctx = trace.Describe(ctx, "at terminal")
 		ctx = trace.Note(ctx, "terminal", current)
 		trace.ErrorAt(ctx, "reference to non-existant type")
-		for name, typ := range g.terminals {
-			log.Printf("known terminal %v -- %#v", name, typ)
-		}
 		return nil
 	}
 	return terminal
@@ -61,23 +116,23 @@ func (g *typegraph) EnterSubtype(ctx context.Context, st *ast.SubtypeDecl) (cont
 		if isRef {
 			g.references[*st.ResolvedName] = refToInfo(ir.Reference(ref))
 		} else {
-			g.terminals[*st.ResolvedName] = ast.TerminalAlias{Info: body.ResolvedType}
+			g.terminals[*st.ResolvedName] = astTerm{ast.TerminalAlias{Info: body.ResolvedType}}
 		}
 	case *ast.Struct:
-		g.terminals[*st.ResolvedName] = ast.TerminalStruct{
+		g.terminals[*st.ResolvedName] = astTerm{ast.TerminalStruct{
 			Struct: body,
-		}
+		}}
 	case *ast.Union:
-		g.terminals[*st.ResolvedName] = ast.TerminalUnion{
+		g.terminals[*st.ResolvedName] = astTerm{ast.TerminalUnion{
 			Union: body,
-		}
+		}}
 	case *ast.Enum:
-		g.terminals[*st.ResolvedName] = ast.TerminalEnum{}
+		g.terminals[*st.ResolvedName] = astTerm{ast.TerminalEnum{}}
 	}
 	return ctx, g
 }
 func (g *typegraph) EnterKind(ctx context.Context, kind *ast.KindDecl) (context.Context, TypeVisitor) {
-	g.terminals[*kind.ResolvedName] = ast.TerminalKind{Kind: kind}
+	g.terminals[*kind.ResolvedName] = astTerm{ast.TerminalKind{Kind: kind}}
 	return ctx, g
 }
 
@@ -111,21 +166,7 @@ func (r *resolver) validationForInfo(ctx context.Context, info *ast.ResolvedType
 		if term == nil {
 			return ast.NoValidation
 		}
-		switch term := term.(type) {
-		case ast.TerminalAlias:
-			return r.validationForInfo(ctx, term.Info)
-		case ast.TerminalStruct:
-			return ast.ObjectishValidation
-		case ast.TerminalUnion:
-			return ast.ObjectishValidation
-		case ast.TerminalEnum:
-			return ast.NoValidation
-		case ast.TerminalKind:
-			// TODO(directxman12): should this be allowed?
-			return ast.ObjectishValidation
-		default:
-			panic("unreachable: unknown terminal type")
-		}
+		return term.Validation(ctx, r)
 	case ast.ListType:
 		return ast.ListValidation
 	case ast.SetType:
@@ -220,37 +261,7 @@ func (c *checker) validListMap(ctx context.Context, listMap ir.ListMap) {
 	}
 
 	// check the type and the corresponding key behavior
-	switch term := term.(type) {
-	case ast.TerminalUnion:
-		union := term.Union
-		if union.Untagged || len(listMap.KeyField) != 1 || listMap.KeyField[0] != union.Tag {
-			trace.ErrorAt(ctx, "for unions to be used as list-map items, the key must be the union's tag")
-		}
-		return
-	case ast.TerminalStruct:
-		// TODO: make sure listMap key field is defaulted somewhere
-	KeyLoop:
-		for _, key := range listMap.KeyField {
-			ctx := trace.Describe(ctx, "key")
-			ctx = trace.Note(ctx, "name", key)
-			for _, field := range term.Struct.Fields {
-				if field.Name.Name == key {
-					// TODO: check that type is scalar:
-					// ( https://github.com/kubernetes-sigs/structured-merge-diff/issues/115#issuecomment-544759657 )
-					continue KeyLoop
-				}
-			}
-			trace.ErrorAt(ctx, "key of list-map not present in item")
-		}
-	case ast.TerminalKind:
-		trace.ErrorAt(ctx, "kinds may not be list-map items")
-	case ast.TerminalAlias:
-		trace.ErrorAt(ctx, "wrapper types may not be list-map items, unless they wrap a struct or union")
-	case ast.TerminalEnum:
-		trace.ErrorAt(ctx, "enum types may not be list-map items (try a set instead)")
-	default:
-		panic("unreachable: unknown terminal type")
-	}
+	term.EnsureValidItem(ctx, listMap)
 }
 // - primitive-map keys are string-ish, primitive-map reference values are strings or appropriate lists
 func (c *checker) validSimpleMap(ctx context.Context, primMap ir.PrimitiveMap) {
@@ -313,72 +324,76 @@ type resolvedBuilder struct {
 	graph *typegraph
 }
 func (b *resolvedBuilder) EnterKind(ctx context.Context, kind *ast.KindDecl) (context.Context, TypeVisitor) {
-	b.graph.terminals[*kind.ResolvedName] = ast.TerminalKind{Kind: kind}
+	b.graph.terminals[*kind.ResolvedName] = astTerm{ast.TerminalKind{Kind: kind}}
 	return ctx, b
 }
 func (b *resolvedBuilder) EnterSubtype(ctx context.Context, st *ast.SubtypeDecl) (context.Context, TypeVisitor) {
 	switch body := st.Body.(type) {
 	case *ast.Newtype:
 		if body.ResolvedType.Terminal != nil {
-			b.graph.terminals[*st.ResolvedName] = body.ResolvedType.Terminal
+			b.graph.terminals[*st.ResolvedName] = astTerm{body.ResolvedType.Terminal}
 		} else {
-			b.graph.terminals[*st.ResolvedName] = ast.TerminalAlias{Info: body.ResolvedType}
+			b.graph.terminals[*st.ResolvedName] = astTerm{ast.TerminalAlias{Info: body.ResolvedType}}
 		}
 	case *ast.Struct:
-		b.graph.terminals[*st.ResolvedName] = ast.TerminalStruct{
+		b.graph.terminals[*st.ResolvedName] = astTerm{ast.TerminalStruct{
 			Struct: body,
-		}
+		}}
 	case *ast.Union:
-		b.graph.terminals[*st.ResolvedName] = ast.TerminalUnion{
+		b.graph.terminals[*st.ResolvedName] = astTerm{ast.TerminalUnion{
 			Union: body,
-		}
+		}}
 	case *ast.Enum:
-		b.graph.terminals[*st.ResolvedName] = ast.TerminalEnum{}
+		b.graph.terminals[*st.ResolvedName] = astTerm{ast.TerminalEnum{}}
 	}
 	return ctx, b
 }
 
-func graphFromResolved(ctx context.Context, input *ast.DepSet) *typegraph {
-	graph := &typegraph{
-		references: make(map[ast.ResolvedNameInfo]ast.ResolvedNameInfo),
-		terminals: make(map[ast.ResolvedNameInfo]ast.TerminalType),
-		externals: make(map[ast.GroupVersionRef]*typegraph),
+// TODO: don't rebuild this a bajillion times
+
+func TypeCheck(ctx context.Context, input *DepSet) {
+	// already checked, done
+	if input.Graph != nil {
+		return
 	}
-	for gv, dep := range input.Deps {
-		graph.externals[gv] = graphFromResolved(ctx, dep)
-	}
-
-
-	return graph
-}
-
-func TypeCheck(ctx context.Context, input *ast.DepSet) {
-	file := &input.Main
 
 	// first, build up the typegraph
 	graph := &typegraph{
 		references: make(map[ast.ResolvedNameInfo]ast.ResolvedNameInfo),
-		terminals: make(map[ast.ResolvedNameInfo]ast.TerminalType),
+		terminals: make(map[ast.ResolvedNameInfo]terminal),
 		externals: make(map[ast.GroupVersionRef]*typegraph),
 	}
+	// assign early to avoid cycles
+	input.Graph = graph
+
+	// add deps to the typegraph
 	for gv, dep := range input.Deps {
-		graph.externals[gv] = graphFromResolved(ctx, dep)
+		TypeCheck(ctx, dep)
+		graph.externals[gv] = dep.Graph
 	}
 
-	for i := range file.GroupVersions {
-		gv := &file.GroupVersions[i]
-		VisitGroupVersion(ctx, graph, gv)
-	}
+	file := input.Main
+	switch file := file.(type) {
+	case RawFile:
+		// build the typegraph for the main file
+		for i := range file.File.GroupVersions {
+			gv := &file.File.GroupVersions[i]
+			VisitGroupVersion(ctx, graph, gv)
+		}
 
-	// the resolve validation expected types & terminal type
-	for i := range file.GroupVersions {
-		gv := &file.GroupVersions[i]
-		VisitGroupVersion(ctx, &resolver{graph: graph}, gv)
-	}
+		// then resolve validation expected types & terminal type
+		for i := range file.File.GroupVersions {
+			gv := &file.File.GroupVersions[i]
+			VisitGroupVersion(ctx, &resolver{graph: graph}, gv)
+		}
 
-	// then, finally, check the types of various things
-	for i := range file.GroupVersions {
-		gv := &file.GroupVersions[i]
-		VisitGroupVersion(ctx, &checker{graph: graph}, gv)
+		// then, finally, check the types of various things
+		for i := range file.File.GroupVersions {
+			gv := &file.File.GroupVersions[i]
+			VisitGroupVersion(ctx, &checker{graph: graph}, gv)
+		}
+	case CompiledFile:
+		// build the typegraph for the main file
+		panic("TODO")
 	}
 }
