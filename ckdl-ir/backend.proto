@@ -4,12 +4,15 @@ package kb.ir.backend;
 option go_package = "k8s.io/idl/ckdl-ir/goir/backend";
 
 message Response {
-    repeated File file = 1;
-
-    message File {
-        string name = 1;
-        bytes contents = 2;
+    oneof type {
+        Log log = 1;
+        File result = 2;
     }
+}
+
+message File {
+    string name = 1;
+    bytes contents = 2;
 }
 
 message Log {
@@ -36,6 +39,6 @@ message Log {
 
         message Node {
             repeated int32 path = 1;
-        }   
+        }
     }
 }

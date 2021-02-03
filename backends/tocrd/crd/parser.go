@@ -23,7 +23,7 @@ import (
 
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
-	"k8s.io/idl/backends/tocrd/irloader"
+	"k8s.io/idl/backends/common/request"
 	irt "k8s.io/idl/ckdl-ir/goir/types"
 	irgv "k8s.io/idl/ckdl-ir/goir/groupver"
 	ir "k8s.io/idl/ckdl-ir/goir"
@@ -44,7 +44,7 @@ type GroupVersion struct {
 // Most methods on Parser cache their results automatically,
 // and thus may be called any number of times.
 type Parser struct {
-	Loader irloader.Loader
+	Loader *request.BackendLoader
 
 	// Types contains the known non-Kind types for this parser.
 	Types map[TypeIdent]*irt.Subtype
@@ -162,7 +162,7 @@ func (p *Parser) NeedGroupVersion(gv GroupVersion) {
 	if _, present := p.GroupVersions[gv]; present {
 		return
 	}
-	set, err := p.Loader.Load(irloader.Hint{Group: gv.Group, Version: gv.Version})
+	set, err := p.Loader.LoadGroupVersion(request.Hint{Group: gv.Group, Version: gv.Version})
 	if err != nil {
 		panic(err)
 	}

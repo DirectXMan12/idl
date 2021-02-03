@@ -6,12 +6,17 @@ import (
 	"strings"
 	"fmt"
 	"os"
+	"os/exec"
 	"context"
+	"bytes"
+	"path/filepath"
 
 	flag "github.com/spf13/pflag"
 
 	"k8s.io/idl/kdlc/loader"
 	"k8s.io/idl/kdlc/parser/trace"
+	irb "k8s.io/idl/ckdl-ir/goir/backend"
+	"k8s.io/idl/backends/common/respond"
 
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
@@ -22,6 +27,7 @@ var (
 	importBundles = flag.StringArrayP("import-bundle", "B", nil, "import from CKDL bundle(s)")
 	outputFormat = flag.StringP("output", "o", "ckdl-bundle", "what to output (ckdl-bundle, or xyz, where ckdl-to-xyz is an executable on your path)")
 	outputArgs = flag.StringArrayP("output-arg", "t", nil, "arguments to pass to the output plugin (e.g. group/version::Type for ckdl-to-crd)")
+	outputDir = flag.StringP("output-dir", "d", "", "path to output files from the output format relative to (defaults to the current directory)")
 	verbose = flag.BoolP("verbose", "v", false, "whether to output the results as textproto to stderr")
 
 	importPartials = new(mapValue)
@@ -142,6 +148,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *outputDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			panic(fmt.Sprintf("no output directory specified, unable to determine current working directory: %v", err))
+		}
+		*outputDir = cwd
+	}
+
 	compiledImp := &loader.CompiledLoader{
 		BundlePaths: *importBundles,
 		DescFilePaths: make(map[string]string),
@@ -155,7 +169,6 @@ func main() {
 		panic("TODO: cache support")
 	}
 
-
 	cfg := loader.Config{
 		Roots: flag.Args(),
 		Imports: &loader.HybridLoader{
@@ -167,13 +180,6 @@ func main() {
 	ctx := trace.RecordError(context.Background())
 	cfg.Load(ctx)
 
-	// TODO: outputs as requested
-	if *outputFormat != "ckdl-bundle" {
-		panic("TODO: other output formats/plugins")
-		// exec ckdl-to-FORMAT [flags...] args...
-		// read responses from stderr to map back to source map
-		// dump output from stdout (manage output location somehow?)
-	}
 
 	bundle := cfg.Outputs.BundleFor(ctx, flag.Args()...)
 	if bundle == nil {
@@ -190,11 +196,110 @@ func main() {
 		fmt.Fprintf(os.Stderr, string(out))
 	}
 
-	out, err := proto.Marshal(bundle)
+	bundleOut, err := proto.Marshal(bundle)
 	if err != nil {
 		panic(err)
 	}
-	if _, err := os.Stdout.Write(out); err != nil {
-		panic(err)
+
+	if *outputFormat == "ckdl-bundle" {
+		if _, err := os.Stdout.Write(bundleOut); err != nil {
+			panic(err)
+		}
+		return
 	}
+
+	// exec ckdl-to-FORMAT [flags...] args...
+	// read responses from stderr to map back to source map
+	// dump output from stdout (manage output location somehow?)
+
+	cmdName := "ckdl-to-"+*outputFormat
+	var args []string
+	for i, flagName := range outputFlags.Keys {
+		flagVal := outputFlags.Values[i]
+		args = append(args, "--%s=%s", flagName, flagVal)
+	}
+	if len(*outputArgs) != 0 {
+		args = append(args, "--")
+	}
+	for _, arg := range *outputArgs {
+		args = append(args, arg)
+	}
+	// TODO: StderrPipe
+	cmd := exec.Command(cmdName, args...)
+	cmdOut := new(bytes.Buffer)
+	cmdErr := new(bytes.Buffer)
+	cmd.Stdout = cmdOut
+	cmd.Stderr = cmdErr
+	cmd.Stdin = bytes.NewReader(bundleOut)
+
+	runErr := cmd.Run()
+	if runErr != nil {
+		fmt.Fprintf(os.Stderr, "error running command %q:\n\t%s\n\n", cmd.String(), cmdErr.String())
+	}
+
+	msgsRaw := cmdOut.Bytes()
+	var msg irb.Response
+	for len(msgsRaw) > 0 {
+		msgsRaw = respond.Read(&msg, msgsRaw)
+
+		switch msgWrapper := msg.Type.(type) {
+		case *irb.Response_Result:
+			file := msgWrapper.Result
+			if *outputDir == "-" {
+				fmt.Printf("---\n# %s\n%s\n", file.Name, string(file.Contents))
+				continue
+			}
+
+			outputPath := filepath.Join(*outputDir, filepath.FromSlash(file.Name))
+			// TODO(directxman12): there's no easy way to check "does this
+			// contain a ../" in it in a cross-platform way for now, so trust
+			// the generator for the moment.  Should fix later.
+			func() {
+				outFile, err := os.Create(outputPath)
+				if err != nil {
+					// TODO
+					panic(err)
+				}
+				defer outFile.Close()
+				// TODO: ensure the directory exists
+				if _, err := outFile.Write(file.Contents); err != nil {
+					// TODO
+					panic(err)
+				}
+			}()
+		case *irb.Response_Log:
+			msg := msgWrapper.Log
+			fmt.Fprintf(os.Stderr, "[%s] ", msg.Lvl)
+			// TODO: unify with parser/trace logic
+			for i, tr := range msg.Trace {
+				if i != 0 {
+					fmt.Fprint(os.Stderr, "\t")
+				}
+				fmt.Fprintf(os.Stderr, "%s", tr.Message) // TODO
+				for _, kv := range tr.Values {
+					// TODO: other_node
+					switch val := kv.Value.(type) {
+					case *irb.Log_Trace_KeyValue_Str:
+						fmt.Fprintf(os.Stderr, " %s=%s", kv.Key, val.Str)
+					default:
+						// TODO
+						fmt.Fprintf(os.Stderr, " %s=<unsupported-%T>", kv.Key, val)
+					}
+				}
+				fmt.Fprintln(os.Stderr, "")
+				// TODO: print node
+			}
+		default:
+			panic(fmt.Sprintf("unknown response type %T", msgWrapper))
+		}
+	}
+	fmt.Fprintln(os.Stderr, "")
+
+	// TODO: check for error logs
+
+	if runErr != nil {
+		os.Exit(1)
+	}
+
+
 }
