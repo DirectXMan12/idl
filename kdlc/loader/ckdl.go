@@ -31,8 +31,15 @@ type CompiledLoader struct {
 	DescFilePaths map[string]string
 	// ImportRoots are fallback roots to join to import paths if we don't
 	// have a manually-specified descriptor path (useful for making stuff
-	// like a cache dir easy)
+	// like a cache dir easy).
+	//
+	// Paths in here will be checked for the
+	// corresponding cKDL file, so `foo/bar/baz.kdl` will be checked as
+	// `<root>/foo/bar/baz.ckdl`.
 	ImportRoots []string
+	// AlwaysUse forces the use of files from ImportRoots,
+	// bypassing the normal cache checks (does the hash match).
+	AlwaysUse bool
 
 	// TODO: different behavior for cache vs non-cache import sources
 
@@ -116,16 +123,26 @@ func (l *CompiledLoader) requestFile(path string) (bool, error) {
 		return true, l.loadPartial(descPath, path)
 	}
 
+	osPath := filepath.FromSlash(path)
+	ext := filepath.Ext(osPath)
+	if ext == ".kdl" {
+		// convert to .ckdl
+		osPath = osPath[:len(osPath)-3]+"ckdl"
+	}
+
 	// otherwise check if the file is below our current import roots
 	for _, root := range l.ImportRoots {
 		// create a filesystem path by splitting the virtual path
 		// and re-joining it to the actual path
-		fullPath := filepath.Join(root, filepath.FromSlash(path))
+		fullPath := filepath.Join(root, osPath)
 		if _, err := os.Stat(fullPath); err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
 			return true, fmt.Errorf("unable to load cKDL file %q (as %q): %w", fullPath, path, err)
+		}
+		if !l.AlwaysUse {
+			panic("TODO: cache checks")
 		}
 		return true, l.loadPartial(fullPath, path)
 	}
@@ -137,6 +154,9 @@ func (l *CompiledLoader) requestFile(path string) (bool, error) {
 func (l *CompiledLoader) ensureInit() error {
 	var err error
 	l.loadOnce.Do(func() {
+		l.loadedFiles = make(map[string]*ire.Partial)
+		l.loadedFileSources = make(map[string]string)
+
 		// load bundles eagerly, since they're virtual file systems
 		for _, bundlePath := range l.BundlePaths {
 			err = l.loadBundle(bundlePath)

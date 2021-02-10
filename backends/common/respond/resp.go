@@ -20,6 +20,15 @@ func Write(msg *ir.Response) {
 	os.Stdout.Write(out)
 }
 
+func File(path string, contents []byte) {
+	Write(&ir.Response{
+		Type: &ir.Response_Result{Result: &ir.File{
+			Name: path,
+			Contents: contents,
+		}},
+	})
+}
+
 func Read(msg *ir.Response, from []byte) []byte {
 	size, sizeSize := protowire.ConsumeVarint(from)
 	if size < 0 {

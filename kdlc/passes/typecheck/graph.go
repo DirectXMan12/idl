@@ -232,12 +232,15 @@ func (g *Graph) saveNode(ctx context.Context, node *Node, path string) {
 }
 
 func (g *Graph) AddFile(ctx context.Context, path string, partial *ire.Partial) {
+	ctx = trace.Note(trace.Describe(ctx, "file"), "path", path)
 	g.avoidCycle(ctx, path)
 
 	// first, make sure all dependencies are present and checked
 	for _, dep := range partial.Dependencies {
+		depCtx := trace.Note(trace.Describe(ctx, "dependency"), "path", dep.From)
+		depCtx = trace.Note(depCtx, "group-version", dep.GroupVersion)
 		// TODO: context
-		g.require(ctx, dep.From)
+		g.require(depCtx, dep.From)
 	}
 
 	// then, build ourself

@@ -81,3 +81,6 @@ func (l *Loader) LoadGroupVersion(gv GroupVersion) ([]GroupVersionInfo, error) {
 func (l *Loader) GroupVersions() map[GroupVersion][]GroupVersionInfo {
 	return l.byGV
 }
+func (l *Loader) Partials() map[string]*ir.Partial {
+	return l.byPath
+}

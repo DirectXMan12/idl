@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+import "types.proto";
+import "constraints.proto";
+
+package kb.ir.markers;
+option go_package = "k8s.io/idl/ckdl-ir/goir/markers";
+
+message MarkerDef {
+    string name = 1;
+    repeated MarkerField fields = 2;
+
+    types.Documentation docs = 15;
+
+    repeated google.protobuf.Any attributes = 2047;  
+}
+
+message Type {
+    oneof type {
+        types.Primitive primitive = 5;
+        TypePrimitive type_primitive = 6;
+        List list = 8;
+        Map map = 9;
+        Reference named_type = 10;
+    }
+}
+
+message MarkerField {
+    string name = 1;
+    bool optional = 2;
+
+    Type type = 3;
+
+    google.protobuf.Value default = 14;
+
+    types.Documentation docs = 15;
+
+    uint32 proto_tag = 16;
+
+    // TODO: attributes elsewhere
+    // extra info carried for backend-specific data (e.g. lang-specific extensions, etc)
+    repeated google.protobuf.Any attributes = 2047;  
+}
+
+// For these, we try to match the structure of the Value type, which is to say a mild superset
+// of JSON (support for communicating types & field paths) + some constraints.
+
+message List {
+    Type items = 1;
+
+    bool unique_items = 10; // normally covered by set, so not in the constraints
+
+    constraints.General general_constraints = 11;
+    constraints.List list_constraints = 12;
+}
+
+message Reference {
+    string name = 1;
+    constraints.Any constraints = 10;
+    // only local references for now
+}
+
+message Map {
+    // keys are strings
+
+    Type values = 1;
+
+    constraints.General general_constraints = 10;
+    constraints.Object object_constraints = 11;
+}
+
+enum TypePrimitive {
+    FIELD_PATH = 0;
+    TYPE = 1;
+}

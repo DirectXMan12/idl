@@ -41,6 +41,7 @@ const (
 	KWUnion
 	KWEnum
 	KWNewType
+	KWMarker
 	KWTrue
 	KWFalse
 	// NB: non-decl-starting types (e.g. primitives, lists, etc) don't
@@ -119,6 +120,8 @@ func TokenString(tok rune) string {
 		return "enum"
 	case KWNewType:
 		return "newtype"
+	case KWMarker:
+		return "marker"
 	case KWTrue:
 		return "true"
 	case KWFalse:
@@ -577,6 +580,8 @@ Loop:
 		tokType = KWEnum
 	case "newtype": // TODO: make this "wrapper" or something?
 		tokType = KWNewType
+	case "marker":
+		tokType = KWMarker
 	case "true":
 		tokType = KWTrue
 	case "false":

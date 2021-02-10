@@ -1,0 +1,10 @@
+import markers (
+    kgo from "markers.kdl";
+)
+
+group-version(group: "core", version: "v1") {
+    kind Foo {  
+        @kgo::name(name: "baz")
+        bar: optional string,
+    }
+}

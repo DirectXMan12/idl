@@ -3,6 +3,8 @@
 package ast
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	ir "k8s.io/idl/ckdl-ir/goir/types"
 	irc "k8s.io/idl/ckdl-ir/goir/constraints"
 )
@@ -72,4 +74,8 @@ type ResolvedTypeInfo struct {
 type ResolvedNameInfo struct {
 	GroupVersion GroupVersionRef
 	FullName string
+}
+
+type ResolvedMarker struct {
+	Message proto.Message
 }

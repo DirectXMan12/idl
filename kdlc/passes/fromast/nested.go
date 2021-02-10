@@ -134,7 +134,6 @@ func (c *identCtx) resolveRef(ctx context.Context, ref *ir.Reference) {
 }
 
 func (c *identCtx) resolveModifiers(ctx context.Context, modifiers ast.ModifierList) *ast.ResolvedTypeInfo {
-	// TODO: save this somewhere so we don't have to recalculate it
 	// convert to concrete typedata first so that we can know what's a type vs
 	// a value that happens to be a enum variant name or whatever (this is an
 	// ambiguity that we could maybe resolve, but it's easy enough to do this instead)
@@ -162,10 +161,9 @@ func (c *identCtx) resolveModifiers(ctx context.Context, modifiers ast.ModifierL
 		c.resolveRef(ctx, typ.Items)
 	case ast.PrimitiveMapType:
 		keyRef, isRef := typ.Key.(*ir.PrimitiveMap_ReferenceKey)
-		if !isRef {
-			break
+		if isRef {
+			c.resolveRef(ctx, keyRef.ReferenceKey)
 		}
-		c.resolveRef(ctx, keyRef.ReferenceKey)
 
 		switch val := typ.Value.(type) {
 		case *ir.PrimitiveMap_ReferenceValue:

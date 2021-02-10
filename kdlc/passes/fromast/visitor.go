@@ -8,6 +8,80 @@ import (
 	"k8s.io/idl/kdlc/parser/ast"
 )
 
+type MarkerVisitor interface {
+	VisitMarker(context.Context, *ast.AbstractMarker)
+}
+
+func VisitMarkers(ctx context.Context, v MarkerVisitor, gv *ast.GroupVersion) {
+	gvCtx := trace.Describe(ctx, "group-version")
+	gvCtx = trace.Note(gvCtx, "group", gv.Group)
+	gvCtx = trace.Note(gvCtx, "version", gv.Group)
+	gvCtx = trace.InSpan(gvCtx, gv)
+
+	for _, marker := range gv.Markers {
+		v.VisitMarker(gvCtx, &marker)
+	}
+
+	VisitGroupVersion(ctx, markerVisitor{v}, gv)
+}
+
+type markerVisitor struct {
+	MarkerVisitor
+}
+func (v markerVisitor) EnterSubtype(ctx context.Context, subtype *ast.SubtypeDecl) (context.Context, TypeVisitor) {
+	for i := range subtype.Markers {
+		v.VisitMarker(ctx, &subtype.Markers[i])
+	}
+
+	switch body := subtype.Body.(type) {
+	case *ast.Struct:
+		for _, field := range body.Fields {
+			ctx := trace.Describe(ctx, "field")
+			ctx = trace.Note(ctx, "name", field.Name)
+
+			for i := range field.Markers {
+				v.VisitMarker(ctx, &field.Markers[i])
+			}
+		}
+	case *ast.Union:
+		for _, field := range body.Variants {
+			ctx := trace.Describe(ctx, "variant")
+			ctx = trace.Note(ctx, "name", field.Name)
+
+			for i := range field.Markers {
+				v.VisitMarker(ctx, &field.Markers[i])
+			}
+		}
+	case *ast.Enum:
+		for _, field := range body.Variants {
+			ctx := trace.Describe(ctx, "variant")
+			ctx = trace.Note(ctx, "name", field.Name)
+
+			for i := range field.Markers {
+				v.VisitMarker(ctx, &field.Markers[i])
+			}
+		}
+	}
+
+	return ctx, v
+}
+func (v markerVisitor) EnterKind(ctx context.Context, kind *ast.KindDecl) (context.Context, TypeVisitor) {
+	for i := range kind.Markers {
+		v.VisitMarker(ctx, &kind.Markers[i])
+	}
+
+	for _, field := range kind.Fields {
+		ctx := trace.Describe(ctx, "field")
+		ctx = trace.Note(ctx, "name", field.Name)
+
+		for i := range field.Markers {
+			v.VisitMarker(ctx, &field.Markers[i])
+		}
+	}
+
+	return ctx, v
+}
+
 type ComplexTypeVisitor interface {
 	BeginSubtype(context.Context, *ast.SubtypeDecl)
 	BeginKind(context.Context, *ast.KindDecl)

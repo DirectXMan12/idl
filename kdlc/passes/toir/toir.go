@@ -10,8 +10,9 @@ import (
 	irt "k8s.io/idl/ckdl-ir/goir/types"
 	irc "k8s.io/idl/ckdl-ir/goir/constraints"
 	irgv "k8s.io/idl/ckdl-ir/goir/groupver"
+	irm "k8s.io/idl/ckdl-ir/goir/markers"
 	ire "k8s.io/idl/ckdl-ir/goir"
-	"github.com/golang/protobuf/ptypes/any"
+	any "google.golang.org/protobuf/types/known/anypb"
 	pstruct "github.com/golang/protobuf/ptypes/struct"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -87,6 +88,7 @@ func File(ctx context.Context, file *ast.File) ire.Partial {
 	return ire.Partial{
 		Dependencies: Imports(ctx, m.Field("dependencies"), file.Imports),
 		GroupVersions: GroupVersions(ctx, m.Field("group_versions"), file.GroupVersions),
+		MarkerSets: MarkerSets(ctx, m.Field("marker_sets"), file.MarkerDecls),
 		SourceMap: m.srcMap.locs,
 	}
 }
@@ -143,8 +145,17 @@ func Docs(ctx context.Context, m *Mapper, docs ast.Docs) *irt.Documentation {
 	return &res
 }
 func Markers(ctx context.Context, m *Mapper, markers []ast.AbstractMarker) []*any.Any {
-	// TODO
-	return nil
+	res := make([]*any.Any, len(markers))
+	for i, raw := range markers {
+		m.Item(i).From(raw)
+		enc, err := any.New(raw.Resolved.Message)
+		if err != nil {
+			trace.ErrorAt(trace.Note(ast.In(ctx, raw), "error", err), "unable to store encoded marker")
+			continue
+		}
+		res[i] = enc
+	}
+	return res
 }
 
 func GroupVersion(ctx context.Context, m *Mapper, gv ast.GroupVersion) *ire.GroupVersion {
@@ -415,14 +426,13 @@ func Field(ctx context.Context, m *Mapper, field ast.Field) *irt.Field {
 		// TODO: zero-means-absent
 		Docs: Docs(ctx, m.Field("docs"), field.Docs),
 		Attributes: Markers(ctx, m.Field("attributes"), field.Markers),
+		ProtoTag: field.ProtoTag,
 	}
 
 	// TODO: mapping for default (should values get full map entries?)
 	if field.ResolvedType.Default != nil {
 		res.Default = Value(ctx, field.ResolvedType.Default)
 	}
-
-	// TODO: proto tag
 
 	switch typ := field.ResolvedType.Type.(type) {
 	case ast.PrimitiveType:
@@ -548,4 +558,98 @@ func Value(ctx context.Context, value ast.Value) *pstruct.Value {
 		panic("unreachable: unknown value type")
 	}
 	return nil
+}
+
+func MarkerField(ctx context.Context, m *Mapper, field ast.Field) *irm.MarkerField {
+	ctx = ast.In(ctx, field)
+	m.From(field)
+	name := field.Name.Name
+	res := irm.MarkerField{
+		Name: name,
+		Optional: field.ResolvedType.Optional,
+		Docs: Docs(ctx, m.Field("docs"), field.Docs),
+		Attributes: Markers(ctx, m.Field("attributes"), field.Markers),
+		ProtoTag: field.ProtoTag,
+	}
+
+	// TODO: mapping for default (should values get full map entries?)
+	if field.ResolvedType.Default != nil {
+		res.Default = Value(ctx, field.ResolvedType.Default)
+	}
+
+	m = m.Field("type")
+	// TODO: none of this is quite right because it's build around the normal types
+	switch typ := field.ResolvedType.Type.(type) {
+	case ast.PrimitiveType:
+		m.Field("primitive").From(field.ResolvedType.TypeSrc)
+		prim := irt.Primitive{
+			Type: irt.Primitive_Type(typ),
+		}
+		primConstraints(ctx, &prim, field.ResolvedType.Validates)
+		res.Type = &irm.Type{Type: &irm.Type_Primitive{Primitive: &prim}}
+	case ast.ListType:
+		m.Field("list").From(field.ResolvedType.TypeSrc)
+		act := irm.List{}
+		switch items := typ.Items.(type) {
+		case *irt.List_Primitive:
+			act.Items = &irm.Type{Type: &irm.Type_Primitive{Primitive: items.Primitive}}
+			// TODO: rest of items
+		default:
+			panic("unreachable: unknown marker field type")
+		}
+		onlyConstrain(ctx, field.ResolvedType.Validates, ast.ListValidation)
+		if field.ResolvedType.Validates != nil {
+			act.ListConstraints = field.ResolvedType.Validates.List
+		}
+		res.Type = &irm.Type{Type: &irm.Type_List{List: &act}}
+	case ast.RefType:
+		panic("TODO: references in markers" )
+	// TODO: typecheck marker fields (no set, list map, special map support, etc)
+	default:
+		panic("unreachable: unknown marker field type")
+	}
+
+	return &res
+}
+
+func MarkerDef(ctx context.Context, m *Mapper, decl ast.MarkerDecl) *irm.MarkerDef {
+	m.From(decl)
+	ctx = ast.In(ctx, decl)
+
+	res := irm.MarkerDef{
+		Name: decl.Name.Name,
+		Docs: Docs(ctx, m.Field("docs"), decl.Docs),
+		Attributes: Markers(ctx, m.Field("attributes"), decl.Markers),
+	}
+
+	fieldM := m.Field("fields")
+	for i, field := range decl.Fields {
+		res.Fields = append(res.Fields, MarkerField(ctx, fieldM.Item(i), field))
+	}
+	return &res
+}
+
+func MarkerSets(ctx context.Context, m *Mapper, astSets []ast.MarkerDeclSet) []*ire.MarkerSet {
+	sets := []*ire.MarkerSet{}
+	for i, set := range astSets {
+		sets = append(sets, MarkerSet(ctx, m.Item(i), set))
+	}
+	return sets
+}
+
+func MarkerSet(ctx context.Context, m *Mapper, set ast.MarkerDeclSet) *ire.MarkerSet {
+	m.From(set)
+	ctx = ast.In(ctx, set)
+
+	// TODO: ensure package is valid proto package name
+	res := ire.MarkerSet{
+		Package: set.Package.Name,
+	}
+
+	declsM := m.Field("markers")
+	for _, decl := range set.MarkerDecls {
+		res.Markers = append(res.Markers, MarkerDef(ctx, declsM.Item(len(res.Markers)), decl))
+	}
+
+	return &res
 }

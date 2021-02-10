@@ -111,6 +111,6 @@ func (l *loader) Load(ctx context.Context, path string) *ire.Partial {
 	if trace.HadError(ctx) {
 		return &ire.Partial{}
 	}
-	res := passes.FileToIR(ctx, file)
+	res := passes.FileToIR(ctx, file, l)
 	return &res
 }

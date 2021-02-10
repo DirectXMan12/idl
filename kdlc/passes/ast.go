@@ -16,6 +16,7 @@ type ASTPass func(ctx context.Context, file *ast.File)
 
 var ASTPasses = []ASTPass{
 	fromast.ResolveNested,
+	fromast.PrepMarkerDecls,
 	// TODO: do we need to check validation?
 }
 
@@ -24,13 +25,21 @@ var ASTPasses = []ASTPass{
 // has happened -- this means we can have unified typechecking logic
 // between pre-compiled cKDL and just-compiled KDL
 
-func FileToIR(ctx context.Context, file *ast.File) ire.Partial {
+func FileToIR(ctx context.Context, file *ast.File, req fromast.Requester) ire.Partial {
 	// AST Passes
 	for _, pass := range ASTPasses {
 		pass(ctx, file)
 		if trace.HadError(ctx) {
 			return ire.Partial{}
 		}
+	}
+
+	// TODO: either forbid mixed marker/type partials, or to load markers for a
+	// file first
+
+	fromast.ResolveMarkers(ctx, file, req)
+	if trace.HadError(ctx) {
+		return ire.Partial{}
 	}
 
 	return toir.File(ctx, file)

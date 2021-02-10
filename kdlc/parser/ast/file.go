@@ -17,6 +17,7 @@ func TokenSpan(tok lexer.Token) trace.Span {
 type File struct {
 	Imports *Imports
 	GroupVersions []GroupVersion
+	MarkerDecls []MarkerDeclSet
 }
 
 type GroupVersionRef struct {
@@ -121,6 +122,8 @@ type AbstractMarker struct {
 
 	Parameters *ParameterList
 
+	Resolved *ResolvedMarker
+
 	trace.Span
 }
 
@@ -161,6 +164,7 @@ type Field struct {
 	Modifiers ModifierList
 	ResolvedType *ResolvedTypeInfo
 	Embedded bool
+	ProtoTag uint32	
 
 	// TODO: inline
 
@@ -260,6 +264,26 @@ type Enum struct {
 	trace.Span
 }
 type Validation struct {
+	trace.Span
+}
+
+type MarkerDecl struct {
+	Docs Docs
+	Markers []AbstractMarker
+
+	Name Identish
+	Fields []Field
+
+	trace.Span
+}
+
+type MarkerDeclSet struct {
+	Docs Docs
+	Markers []AbstractMarker
+
+	Package Identish
+	MarkerDecls []MarkerDecl
+
 	trace.Span
 }
 

@@ -18,7 +18,6 @@ import (
 
 	ir "k8s.io/idl/ckdl-ir/goir"
 	irt "k8s.io/idl/ckdl-ir/goir/types"
-	irb "k8s.io/idl/ckdl-ir/goir/backend"
 )
 
 type comment struct {
@@ -48,6 +47,7 @@ type imports struct {
 type pkgWriter struct {
 	Boilerplate string
 	SortOrder map[string]int
+	CurrentGV groupVersion
 
 	imports imports
 	header *bytes.Buffer
@@ -100,7 +100,15 @@ func (w *pkgWriter) Write(out io.Writer) {
 	fmt.Fprintln(out, "import (")
 	for gv, alias := range w.imports.byGV {
 		// TODO: figure out import paths
-		path := fmt.Sprintf("k8s.io/api/%s/%v", gv.Group, gv.Version)
+		var path string
+		switch gv.Group {
+		case "__resource":
+			path =  "k8s.io/apimachinery/pkg/api/resource"
+		case "__intstr":
+			path = "k8s.io/apimachinery/pkg/util/intstr"
+		default:
+			path = fmt.Sprintf("k8s.io/api/%s/%v", gv.Group, gv.Version)
+		}
 		fmt.Fprintf(out, "\t%s %q\n", alias, path)
 	}
 	fmt.Fprintln(out, ")\n")
@@ -163,6 +171,9 @@ func (w *pkgWriter) ConstBlock(typeName string, variants ...enumConst) {
 }
 func (w *pkgWriter) MakeGVRef(ref *irt.Reference) string {
 	typeName := nameType(ref.Name, nil) // TODO: we need the typecheck graph to get the underlying markers for this
+	if ref.GroupVersion.Group == w.CurrentGV.Group && ref.GroupVersion.Version == w.CurrentGV.Version {
+		return typeName
+	}
 	gv := groupVersion{Group: ref.GroupVersion.Group, Version: ref.GroupVersion.Version}
 	if existing, exists := w.imports.byGV[gv]; exists {
 		return existing+"."+typeName
@@ -171,6 +182,7 @@ func (w *pkgWriter) MakeGVRef(ref *irt.Reference) string {
 	// first try combinations of group+version, starting with just the first
 	// part, then going forward.
 	groupParts := strings.Split(gv.Group, ".")
+	groupParts[0] = strings.TrimPrefix(groupParts[0], "__")
 	for partsToTry := 1; partsToTry <= len(groupParts); partsToTry++ {
 		candidate := strings.Replace(strings.Join(groupParts[0:partsToTry], "")+gv.Version, "-", "_", -1)
 		_, exists := w.imports.used[candidate]
@@ -209,6 +221,9 @@ func (w *subWriter) Field(name string, typ string, structTag tags, comments comm
 		if len(structTag.json) != 0 {
 			fmt.Fprintf(w.out, `json:"%s"`, strings.Join(structTag.json, ","))
 		}
+		if len(structTag.proto) != 0 {
+			fmt.Fprintf(w.out, ` proto:"%s"`, strings.Join(structTag.proto, ","))
+		}
 		fmt.Fprint(w.out, "`")
 	}
 	fmt.Fprintln(w.out, "")
@@ -238,6 +253,7 @@ func main() {
 	for gv, infos := range loader.GroupVersions() {
 		respond.GeneralInfo("processing group-version", "group", gv.Group, "version", gv.Version)
 		out := newPkgWriter() // TODO
+		out.CurrentGV = groupVersion{Group: gv.Group, Version: gv.Version}
 		irs := make([]*ir.GroupVersion, len(infos))
 		for i, info := range infos {
 			irs[i] = info.GroupVersion
@@ -258,13 +274,7 @@ func main() {
 		if len(infos) > 1 {
 			respond.GeneralInfo("multiple source KDL files for group-version, using first for output name", "group", gv.Group, "version", gv.Version)
 		}
-		respond.Write(&irb.Response{
-			Type: &irb.Response_Result{Result: &irb.File{
-				// TODO
-				Name: outFileName,
-				Contents: fmtSrc,
-			}},
-		})
+		respond.File(outFileName, fmtSrc)
 	}
 
 }
@@ -274,9 +284,11 @@ func writeGo(inputs []*ir.GroupVersion, out *pkgWriter) {
 		doc: &irt.Documentation{},
 	}
 	for _, gv := range inputs {
-		pkgComments.doc.Description += gv.Description.Docs.Description
-		pkgComments.doc.ExternalRef += gv.Description.Docs.ExternalRef
-		pkgComments.doc.Example += gv.Description.Docs.Example
+		if gv.Description.Docs != nil {
+			pkgComments.doc.Description += gv.Description.Docs.Description
+			pkgComments.doc.ExternalRef += gv.Description.Docs.ExternalRef
+			pkgComments.doc.Example += gv.Description.Docs.Example
+		}
 	}
 	out.Package(inputs[0].Description.Version, pkgComments)
 
@@ -308,7 +320,7 @@ func writeGo(inputs []*ir.GroupVersion, out *pkgWriter) {
 				typeStr := out.MakeGVRef(body.ReferenceAlias)
 				out.LineType(typeName, comments, typeStr)
 			case *irt.Subtype_PrimitiveAlias:
-				typeStr := primType(body.PrimitiveAlias, false)
+				typeStr := primType(body.PrimitiveAlias, false, out)
 				out.LineType(typeName, comments, typeStr)
 			case *irt.Subtype_Union:
 				union := body.Union
@@ -325,7 +337,7 @@ func writeGo(inputs []*ir.GroupVersion, out *pkgWriter) {
 				if !union.Untagged {
 					variants := make([]enumConst, len(union.Variants))
 					for i, field := range union.Variants {
-						fieldName := strings.Title(field.Name) // TODO: allow override with marker like in field
+						fieldName := nameField(field.Name, field.Attributes)
 						variants[i] = enumConst{
 							name: typeName+fieldName,
 							value: fieldName,
@@ -372,12 +384,68 @@ func writeGo(inputs []*ir.GroupVersion, out *pkgWriter) {
 	}
 }
 
+func nameField(rawName string, attrs []*pany.Any) string {
+	for _, attr := range attrs {
+		if attr.MessageIs(&Name{}) {
+			var name Name
+			if err := attr.UnmarshalTo(&name); err != nil {
+				panic("TODO: "+err.Error())
+			}
+			return name.Name
+		}
+	}
+	return strings.Title(rawName)
+}
+
 func nameType(rawName string, attrs []*pany.Any) string {
-	// TODO: use attributes to allow rename marker
+	for _, attr := range attrs {
+		if attr.MessageIs(&Name{}) {
+			var name Name
+			if err := attr.UnmarshalTo(&name); err != nil {
+				panic("TODO: "+err.Error())
+			}
+			return name.Name
+		}
+	}
 	return strings.Replace(rawName, "::", "", -1)
 }
 
-func primType(typ *irt.Primitive, isPtr bool) string {
+var (
+	timeRef = &irt.Reference{
+		GroupVersion: &irt.GroupVersionRef{
+			Group: "meta.k8s.io",
+			Version: "v1",
+		},
+		Name: "Time",
+	}
+
+	durationRef = &irt.Reference{
+		GroupVersion: &irt.GroupVersionRef{
+			Group: "meta.k8s.io",
+			Version: "v1",
+		},
+		Name: "Duration",
+	}
+
+	quantityRef = &irt.Reference{
+		GroupVersion: &irt.GroupVersionRef{
+			Group: "__resource",
+			Version: "",
+		},
+		Name: "Duration",
+	}
+
+	intStrRef = &irt.Reference{
+		GroupVersion: &irt.GroupVersionRef{
+			Group: "__intstr",
+			Version: "",
+		},
+		Name: "Duration",
+	}
+)
+
+
+func primType(typ *irt.Primitive, isPtr bool, refs refMaker) string {
 	typeStr := ""
 	switch typ.Type {
 	case irt.Primitive_STRING:
@@ -396,26 +464,22 @@ func primType(typ *irt.Primitive, isPtr bool) string {
 			typeStr = "*"+typeStr
 		}
 	case irt.Primitive_BOOL:
-		// TODO: note the import
 		typeStr = "bool"
 		if isPtr {
 			typeStr = "*"+typeStr
 		}
 	case irt.Primitive_TIME:
-		// TODO: note the import
-		typeStr = "metav1.Time"
+		typeStr = refs.MakeGVRef(timeRef)
 		if isPtr {
 			typeStr = "*"+typeStr
 		}
 	case irt.Primitive_DURATION:
-		// TODO: note the import
-		typeStr = "metav1.Duration"
+		typeStr = refs.MakeGVRef(durationRef)
 		if isPtr {
 			typeStr = "*"+typeStr
 		}
 	case irt.Primitive_QUANTITY:
-		// TODO: note the import
-		typeStr = "resource.Quantity"
+		typeStr = refs.MakeGVRef(quantityRef)
 		if isPtr {
 			typeStr = "*"+typeStr
 		}
@@ -427,8 +491,7 @@ func primType(typ *irt.Primitive, isPtr bool) string {
 			typeStr = "*"+typeStr
 		}
 	case irt.Primitive_INTORSTRING:
-		// TODO: note the import
-		typeStr = "intstr.IntOrString"
+		typeStr = refs.MakeGVRef(intStrRef)
 		if isPtr {
 			typeStr = "*"+typeStr
 		}
@@ -447,7 +510,7 @@ type refMaker interface {
 func listType(list *irt.List, refs refMaker) string {
 	switch items := list.Items.(type) {
 	case *irt.List_Primitive:
-		return "[]"+primType(items.Primitive, false)
+		return "[]"+primType(items.Primitive, false, refs)
 	case *irt.List_Reference:
 		return "[]"+refs.MakeGVRef(items.Reference)
 	default:
@@ -461,7 +524,7 @@ func setType(set *irt.Set, fieldTag *tags, comment *comment, refs refMaker) stri
 	})
 	switch items := set.Items.(type) {
 	case *irt.Set_Primitive:
-		return "[]"+primType(items.Primitive, false)
+		return "[]"+primType(items.Primitive, false, refs)
 	case *irt.Set_Reference:
 		return "[]"+refs.MakeGVRef(items.Reference)
 	default:
@@ -472,7 +535,7 @@ func primMapType(primMap *irt.PrimitiveMap, fieldTag *tags, comment *comment, re
 	typeStr := "map["
 	switch key := primMap.Key.(type) {
 	case *irt.PrimitiveMap_PrimitiveKey:
-		typeStr += primType(key.PrimitiveKey, false)
+		typeStr += primType(key.PrimitiveKey, false, refs)
 	case *irt.PrimitiveMap_ReferenceKey:
 		typeStr += refs.MakeGVRef(key.ReferenceKey)
 	default:
@@ -482,7 +545,7 @@ func primMapType(primMap *irt.PrimitiveMap, fieldTag *tags, comment *comment, re
 
 	switch value := primMap.Value.(type) {
 	case *irt.PrimitiveMap_PrimitiveValue:
-		typeStr += primType(value.PrimitiveValue, false)
+		typeStr += primType(value.PrimitiveValue, false, refs)
 	case *irt.PrimitiveMap_ReferenceValue:
 		typeStr += refs.MakeGVRef(value.ReferenceValue)
 	case *irt.PrimitiveMap_SimpleListValue:
@@ -525,11 +588,24 @@ func writeField(field *irt.Field, out *subWriter) {
 	}
 
 	// TODO: allow override with marker
-	fieldName := strings.Title(field.Name)
+	fieldName := nameField(field.Name, field.Attributes)
+
+	// most of the fields are ignored by the generator
+	// as long as we satisfy the magic incantation of
+	// `bytes,<number>,<stuff>,name=xyz`.
+
+	// *HOWEVER* we'll go through a lot of extra work anyway
+	// to avoid diff-drift where we can, guessing at what
+	// people might've manually put here (people are wrong
+	// frequently though, and we're a bit lazy with our guesses,
+	// so *shrug*).
+	optOrRep := "" // either proto opt or proto rep guess
+	protoType := "bytes" // always gonna either be bytes or varint, never anything else
 
 	if field.Optional {
 		fieldTag.json = append(fieldTag.json, "omitempty")
 		comment.markers = append(comment.markers, marker{name: "optional"})
+		optOrRep = "opt"
 	}
 	if field.Embedded {
 		fieldTag.json = append(fieldTag.json, "inline")
@@ -542,7 +618,11 @@ func writeField(field *irt.Field, out *subWriter) {
 	typeStr := ""
 	switch typ := field.Type.(type) {
 	case *irt.Field_Primitive:
-		typeStr = primType(typ.Primitive, isPtr)
+		switch typ.Primitive.Type {
+		case irt.Primitive_BOOL, irt.Primitive_LEGACYINT32, irt.Primitive_INT64:
+			protoType = "varint"
+		}
+		typeStr = primType(typ.Primitive, isPtr, out)
 	case *irt.Field_NamedType:
 		typeStr = out.MakeGVRef(typ.NamedType)
 		// TODO: we need to check the eventual type of this reference to know this
@@ -550,15 +630,26 @@ func writeField(field *irt.Field, out *subWriter) {
 			typeStr = "*"+typeStr
 		}
 	case *irt.Field_Set:
+		optOrRep = "rep"
 		typeStr = setType(typ.Set, &fieldTag, &comment, out)
 	case *irt.Field_List:
+		optOrRep = "rep"
 		typeStr = listType(typ.List, out)
 	case *irt.Field_PrimitiveMap:
 		typeStr = primMapType(typ.PrimitiveMap, &fieldTag, &comment, out)
 	case *irt.Field_ListMap:
+		optOrRep = "rep"
 		typeStr = listMapType(typ.ListMap, &fieldTag, &comment, out)
 	default:
 		panic(fmt.Sprintf("unreachable: unknown field type %T", typ))
+	}
+
+	if field.ProtoTag != 0 {
+		fieldTag.proto = tag{protoType, fmt.Sprintf("%d", field.ProtoTag), }
+		if optOrRep != "" {
+			fieldTag.proto = append(fieldTag.proto, optOrRep)
+		}
+		fieldTag.proto = append(fieldTag.proto, "name="+field.Name)
 	}
 
 	out.Field(fieldName, typeStr, fieldTag, comment)

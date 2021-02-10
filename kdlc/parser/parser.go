@@ -470,16 +470,19 @@ type Param interface{
 	parse(ctx context.Context, p *Parser)
 	name() string
 	present() bool
+	Spannable
 }
 type StringParam struct {
 	Name string
 	Value string
 	set bool
+	Span
 }
 func (s *StringParam) parse(ctx context.Context, p *Parser) {
-	text, _ := p.parseString(ctx)
+	text, tok := p.parseString(ctx)
 	s.Value = text
 	s.set = true
+	s.Span = EndSpan(ctx, tok)
 }
 func (s StringParam) name() string {
 	return s.Name
@@ -491,6 +494,7 @@ type BoolParam struct {
 	Name string
 	Value bool
 	set bool
+	Span
 }
 func (s *BoolParam) parse(ctx context.Context, p *Parser) {
 	tok := p.peek()
@@ -503,6 +507,7 @@ func (s *BoolParam) parse(ctx context.Context, p *Parser) {
 		p.markErrExp(ctx, tok, lexer.KWTrue, lexer.KWFalse)
 	}
 	s.set = true
+	s.Span = EndSpan(ctx, tok)
 }
 func (s BoolParam) name() string {
 	return s.Name
@@ -521,10 +526,15 @@ func (p *Parser) parseParamList(ctx context.Context, defs ...Param) Span {
 	}
 
 	p.until(')', func() {
-		key, _ := p.parseKey(Describe(ctx, "parameter key"))
-		ctx := Note(ctx, "name", key)
+		ctx := Describe(ctx, "parameter")
+		key, keyTok := p.parseKey(Describe(ctx, "parameter key"))
+		ctx = Note(ctx, "name", key)
+		ctx = BeginSpan(ctx, keyTok) // will be ended by parse
+
 		p.expect(Describe(ctx, "between keys and values"), ':')
+
 		defs[defsIdx[key]].parse(Describe(ctx, "parameter value"), p)
+
 		if p.peek().Type != ')' {
 			// don't require a trailing comma (but this'll still support it anyway)
 			p.expectOrRecover(ctx, ',')
@@ -1034,6 +1044,105 @@ func (p *Parser) parseEnumBlock(ctx context.Context) ast.Enum {
 	}
 }
 
+func (p *Parser) parseMarkerFields(ctx context.Context) ([]ast.Field, Span) {
+	ctx = Describe(ctx, "field block")
+	ctx = BeginSpan(ctx, p.expect(Describe(ctx, "field block start"), '{'))
+
+	var fields []ast.Field
+
+	p.until('}', func() {
+		docs, markers := p.maybeDocsMarkers(Describe(ctx, "field"))
+
+		name, nameTok := p.parseKey(Describe(ctx, "field name"))
+		ctx := BeginSpan(ctx, nameTok)
+
+		p.expect(Describe(ctx, "proto number start"), '[')
+		numRaw, numTok := p.expectWithText(ctx, lexer.Number)
+		num, err := strconv.Atoi(numRaw)
+		if err != nil {
+			p.markErr(Note(ctx, "error", err), numTok)
+		}
+		if num <= 0 {
+			p.markErr(Note(ctx, "expected", "number greater than zero"), numTok)
+		}
+		p.expect(Describe(ctx, "proto number end"), ']')
+
+		p.expect(ctx, ':')
+		var mods ast.ModifierList
+		p.untilEither(',', '}', func() {
+			mods = append(mods, p.parseModifier(ctx))
+		})
+		// TODO: recover till '}' too
+		span := EndSpan(ctx, p.expectOrRecover(ctx, ','))
+
+		fields = append(fields, ast.Field{
+			Docs: docs,
+			Markers: markers,
+			Name: ast.IdentFrom(name, nameTok),
+			Modifiers: mods,
+			Span: span,
+			ProtoTag: uint32(num),
+		})
+	})
+
+	span := EndSpan(ctx, p.expectOrRecover(Describe(ctx, "field block end"), '}'))
+	return fields, span
+}
+
+func (p *Parser) parseMarkers(ctx context.Context) ast.MarkerDeclSet {
+	ctx = Describe(ctx, "marker decls")
+	docs, markers := p.maybeDocsMarkers(ctx)
+
+	ctx = BeginSpan(ctx, p.expect(ctx, lexer.KWMarkers))
+
+	pkg := StringParam{Name: "package"}
+	argsCtx := Describe(ctx, "markers parameters")
+	p.requiredArgs(
+		argsCtx,
+		p.parseParamList(argsCtx, &pkg),
+		&pkg,
+	)
+
+	ctx = Describe(ctx, "marker decls block")
+
+	var decls []ast.MarkerDecl
+
+	p.expect(ctx, '{')
+	p.until('}', func() {
+		decls = append(decls, p.parseMarker(ctx))
+	})
+	span := EndSpan(ctx, p.expectOrRecover(Describe(ctx, "marker decls block end"), '}'))
+
+	return ast.MarkerDeclSet{
+		Docs: docs,
+		Markers: markers,
+		Package: ast.Identish{Name: pkg.Value, Span: pkg.Span},
+		MarkerDecls: decls,
+		Span: span,
+	}
+}
+
+func (p *Parser) parseMarker(ctx context.Context) ast.MarkerDecl {
+	ctx = Describe(ctx, "marker")
+	docs, markers := p.maybeDocsMarkers(ctx)
+
+	ctx = BeginSpan(ctx, p.expect(ctx, lexer.KWMarker))
+	// TODO: param list for what it can affect
+
+	name, nameTok := p.parseKey(Describe(ctx, "marker name"))
+	ctx = Note(ctx, "name", name)
+
+	fields, blockSpan := p.parseMarkerFields(ctx)
+	span := EndSpanAt(ctx, blockSpan.End)
+	return ast.MarkerDecl{
+		Docs: docs,
+		Markers: markers,
+		Name: ast.IdentFrom(name, nameTok),
+		Fields: fields,
+		Span: span,
+	}
+}
+
 func (p *Parser) Parse(ctx context.Context) *ast.File {
 	res := &ast.File{}
 	if tok := p.peek(); tok.Type == lexer.KWImport {
@@ -1042,9 +1151,14 @@ func (p *Parser) Parse(ctx context.Context) *ast.File {
 	}
 
 	for tok := p.peek(); tok.Type != lexer.EOF; tok = p.peek() {
-		res.GroupVersions = append(res.GroupVersions, p.parseGroupVersion(ctx))
+		switch tok.Type {
+		case lexer.KWMarkers:
+			// TODO: this does not allow doc comments or markers on marker sets, which we need to fix
+			res.MarkerDecls = append(res.MarkerDecls, p.parseMarkers(ctx))
+		default:
+			res.GroupVersions = append(res.GroupVersions, p.parseGroupVersion(ctx))
+		}
 	}
 
 	return res
 }
-

@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "types.proto";
+import "markers.proto";
 import "groupver.proto";
 
 package kb.ir;
@@ -12,11 +13,19 @@ message GroupVersion {
     repeated types.Subtype types = 3;
 }
 
+message MarkerSet {
+    string package = 1;
+    repeated markers.MarkerDef markers = 2;
+    // TODO: allow docs, attributes
+}
+
 message Partial {
     repeated GroupVersion group_versions = 1;
     repeated Dependency dependencies = 2;
 
     repeated Location source_map = 3;
+
+    repeated MarkerSet marker_sets = 4;
 
     message Dependency {
         types.GroupVersionRef group_version = 1;

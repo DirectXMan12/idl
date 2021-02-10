@@ -1,0 +1,5 @@
+markers(package: "kb.ir.backends.kgo") {
+    marker name {
+        name[1]: string,
+    }
+}

@@ -246,6 +246,8 @@ func WithFullInput(ctx context.Context, input string) context.Context {
 	return context.WithValue(ctx, inputKey, input)
 }
 
+// TODO: this is borked for multi-file input, need something like fset
+
 func Snippet(loc Span, input string) string {
 	if !loc.Complete() {
 		// treat this as a single-token span if we're incomplete

@@ -25,7 +25,7 @@ import (
 var (
 	importPaths = flag.StringArrayP("import-dir", "i", nil, "root KDL & cKDL import paths")
 	importBundles = flag.StringArrayP("import-bundle", "B", nil, "import from CKDL bundle(s)")
-	outputFormat = flag.StringP("output", "o", "ckdl-bundle", "what to output (ckdl-bundle, or xyz, where ckdl-to-xyz is an executable on your path)")
+	outputFormat = flag.StringP("output", "o", "bundle", "what to output (bundle, or xyz, where ckdl-to-xyz is an executable on your path)")
 	outputArgs = flag.StringArrayP("output-arg", "t", nil, "arguments to pass to the output plugin (e.g. group/version::Type for ckdl-to-crd)")
 	outputDir = flag.StringP("output-dir", "d", "", "path to output files from the output format relative to (defaults to the current directory)")
 	verbose = flag.BoolP("verbose", "v", false, "whether to output the results as textproto to stderr")
@@ -48,6 +48,8 @@ func (v *cacheBehaviorVal) Set(s string) error {
 		fallthrough
 	case "alongside":
 		v.Behavior = key
+	case "alongside-always":
+		v.Behavior = key
 	case "dir":
 		v.Behavior = "dir"
 		if len(parts) != 2 {
@@ -55,7 +57,7 @@ func (v *cacheBehaviorVal) Set(s string) error {
 		}
 		v.Dir = parts[1]
 	default:
-		return fmt.Errorf("unknown cache behavior %q, expected none|alongside|dir=path", parts[0])
+		return fmt.Errorf("unknown cache behavior %q, expected none|alongside|alongside-always|dir=path", parts[0])
 	}
 	return nil
 }
@@ -70,6 +72,8 @@ func (v *cacheBehaviorVal) String() string {
 		return fmt.Sprintf("dir=%s", v.Dir)
 	case "alongside":
 		return "alongside"
+	case "alongside-always":
+		return "alongside-always"
 	default:
 		return fmt.Sprintf("unknown-%s=%s", v.Type, v.Dir)
 	}
@@ -165,7 +169,13 @@ func main() {
 		ckdlPath := importPartials.Values[i]
 		compiledImp.DescFilePaths[kdlPath] = ckdlPath
 	}
-	if cacheBehavior.Behavior != "none" {
+	switch cacheBehavior.Behavior { 
+	case "none":
+		// do nothing
+	case "alongside-always":
+		compiledImp.ImportRoots = *importPaths
+		compiledImp.AlwaysUse = true
+	default:
 		panic("TODO: cache support")
 	}
 
@@ -180,6 +190,9 @@ func main() {
 	ctx := trace.RecordError(context.Background())
 	cfg.Load(ctx)
 
+	if trace.HadError(ctx) {
+		os.Exit(1)
+	}
 
 	bundle := cfg.Outputs.BundleFor(ctx, flag.Args()...)
 	if bundle == nil {
@@ -201,7 +214,7 @@ func main() {
 		panic(err)
 	}
 
-	if *outputFormat == "ckdl-bundle" {
+	if *outputFormat == "bundle" {
 		if _, err := os.Stdout.Write(bundleOut); err != nil {
 			panic(err)
 		}
@@ -209,9 +222,6 @@ func main() {
 	}
 
 	// exec ckdl-to-FORMAT [flags...] args...
-	// read responses from stderr to map back to source map
-	// dump output from stdout (manage output location somehow?)
-
 	cmdName := "ckdl-to-"+*outputFormat
 	var args []string
 	for i, flagName := range outputFlags.Keys {
